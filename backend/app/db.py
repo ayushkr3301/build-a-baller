@@ -19,16 +19,48 @@ import threading
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 DB_PATH = Path(os.environ.get("BAB_DB", Path(__file__).resolve().parent.parent / "data" / "runs.db"))
 
 
+# Neon's Vercel integration sets half a dozen aliases for the same database.
+# Order matters: the pooled `-pooler` URLs suit serverless, and the Prisma-flavoured
+# one goes last because it needs cleaning before libpq will look at it.
+POSTGRES_URL_KEYS = (
+    "POSTGRES_URL",
+    "DATABASE_URL",
+    "POSTGRES_PRISMA_URL",
+    "POSTGRES_URL_NON_POOLING",
+    "DATABASE_URL_UNPOOLED",
+)
+
+# libpq rejects unknown connection parameters outright rather than ignoring them --
+# `POSTGRES_PRISMA_URL` ships with `?pgbouncer=true`, which fails with
+# `invalid URI query parameter: "pgbouncer"` before a socket is ever opened.
+NON_LIBPQ_PARAMS = frozenset(
+    {"pgbouncer", "schema", "connection_limit", "pool_timeout", "sslaccept", "supa"}
+)
+
+
+def _strip_non_libpq_params(url: str) -> str:
+    parts = urlsplit(url)
+    if not parts.query:
+        return url
+    kept = [
+        (k, v)
+        for k, v in parse_qsl(parts.query, keep_blank_values=True)
+        if k not in NON_LIBPQ_PARAMS
+    ]
+    return urlunsplit(parts._replace(query=urlencode(kept)))
+
+
 def postgres_url() -> str | None:
-    """Vercel/Neon inject several aliases; prefer the pooled one for serverless."""
-    for key in ("POSTGRES_PRISMA_URL", "POSTGRES_URL", "DATABASE_URL"):
+    """The first usable Postgres connection string, cleaned for libpq."""
+    for key in POSTGRES_URL_KEYS:
         value = os.environ.get(key)
         if value:
-            return value
+            return _strip_non_libpq_params(value)
     return None
 
 

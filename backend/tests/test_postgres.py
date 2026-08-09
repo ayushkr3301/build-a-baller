@@ -22,10 +22,26 @@ pytestmark = pytest.mark.skipif(not PG_URL, reason="BAB_TEST_POSTGRES_URL not se
 
 @pytest.fixture()
 def pg_client():
-    """A TestClient wired to Postgres with a clean runs table."""
-    previous = {k: os.environ.get(k) for k in ("POSTGRES_URL", "DATABASE_URL", "BAB_DB")}
+    """A TestClient wired to Postgres with a clean runs table.
+
+    Sets the full alias set Neon's Vercel integration injects -- including the
+    Prisma URL with its libpq-hostile query params -- so the fixture exercises
+    the same environment production will have.
+    """
+    keys = (
+        "POSTGRES_URL",
+        "DATABASE_URL",
+        "POSTGRES_PRISMA_URL",
+        "POSTGRES_URL_NON_POOLING",
+        "DATABASE_URL_UNPOOLED",
+        "BAB_DB",
+    )
+    previous = {k: os.environ.get(k) for k in keys}
     os.environ["POSTGRES_URL"] = PG_URL
-    os.environ.pop("DATABASE_URL", None)
+    os.environ["DATABASE_URL"] = PG_URL
+    os.environ["POSTGRES_PRISMA_URL"] = f"{PG_URL}?pgbouncer=true&connect_timeout=15"
+    os.environ["POSTGRES_URL_NON_POOLING"] = PG_URL
+    os.environ["DATABASE_URL_UNPOOLED"] = PG_URL
 
     from app import db as db_mod
 
@@ -50,6 +66,53 @@ def pg_client():
                 os.environ[key] = value
         importlib.reload(db_mod)
         importlib.reload(main_mod)
+
+
+def test_prisma_flavoured_url_is_cleaned_before_libpq_sees_it():
+    """Neon's Vercel integration sets POSTGRES_PRISMA_URL with ?pgbouncer=true.
+
+    libpq rejects unknown connection parameters outright -- `invalid URI query
+    parameter: "pgbouncer"` -- so it has to be stripped, and the plain pooled URL
+    has to win when both are present.
+    """
+    from app import db as db_mod
+
+    prisma = (
+        "postgresql://u:p@ep-x-pooler.aws.neon.tech/neondb"
+        "?sslmode=require&pgbouncer=true&connect_timeout=15"
+    )
+    cleaned = db_mod._strip_non_libpq_params(prisma)
+    assert "pgbouncer" not in cleaned
+    assert "sslmode=require" in cleaned
+    assert "connect_timeout=15" in cleaned  # this one is real libpq, keep it
+
+    import psycopg
+
+    with pytest.raises(psycopg.ProgrammingError, match="pgbouncer"):
+        psycopg.connect(prisma, connect_timeout=1)
+    # ...cleaned, it gets far enough to actually attempt a connection
+    with pytest.raises(psycopg.OperationalError):
+        psycopg.connect(cleaned, connect_timeout=1)
+
+
+def test_plain_pooled_url_is_preferred_over_the_prisma_alias(monkeypatch):
+    from app import db as db_mod
+
+    for key in db_mod.POSTGRES_URL_KEYS:
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("POSTGRES_PRISMA_URL", "postgresql://u:p@h/db?pgbouncer=true")
+    monkeypatch.setenv("POSTGRES_URL", "postgresql://u:p@h/db?sslmode=require")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@other/db")
+    assert db_mod.postgres_url() == "postgresql://u:p@h/db?sslmode=require"
+
+
+def test_the_full_neon_env_var_set_still_connects(pg_client):
+    """Simulate every alias Neon injects at once, not just the one we hope for."""
+    from app import db as db_mod
+
+    assert db_mod.IS_POSTGRES
+    meta = pg_client.get("/api/meta")
+    assert meta.status_code == 200, meta.text
 
 
 def test_placeholder_translation_targets_the_right_dialect():
