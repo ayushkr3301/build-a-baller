@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 
 import { Celebration } from '../components/Celebration'
+import { DailyShare } from '../components/DailyShare'
 import { PlayerCard } from '../components/PlayerCard'
 import { ShareCard } from '../components/ShareCard'
 import { play, useCountUp } from '../lib/motion'
@@ -27,6 +28,8 @@ interface Props {
   meta: Meta
   onRestart: () => void
   onHallOfFame: () => void
+  onPractice: () => void
+  busy: boolean
 }
 
 type Tab = 'season' | 'table' | 'matches' | 'awards' | 'cup'
@@ -91,7 +94,7 @@ function Leaders({ title, rows, unit }: { title: string; rows: LeaderRow[]; unit
   )
 }
 
-export function SeasonReport({ run, meta, onRestart, onHallOfFame }: Props) {
+export function SeasonReport({ run, meta, onRestart, onHallOfFame, onPractice, busy }: Props) {
   const [tab, setTab] = useState<Tab>('season')
   const season = run.season!
   const p = season.player
@@ -469,6 +472,15 @@ export function SeasonReport({ run, meta, onRestart, onHallOfFame }: Props) {
             Winners: <b>{season.cup.winner}</b>
           </p>
         </div>
+      )}
+
+      {run.share && (
+        <DailyShare
+          share={run.share}
+          regret={run.best_possible?.regret ?? 0}
+          onPractice={onPractice}
+          busy={busy}
+        />
       )}
 
       <ShareCard run={run} attributes={attributes} />

@@ -119,6 +119,7 @@ def _public(row, state: dict) -> dict:
         "season": json.loads(row["season"]) if row["season"] else None,
         "career": _career_payload(state),
         "best_possible": _best_possible(state),
+        "share": _share_payload(row, state),
     }
     if state["phase"] in ("built", "vetoed"):
         payload["draft_odds"] = [
@@ -162,6 +163,38 @@ def _best_possible(state: dict) -> dict | None:
         "regret": max(0, overall - board.overall),
         "picks": picks,
         "players_seen": len(players),
+    }
+
+
+def _share_payload(row, state: dict) -> dict | None:
+    """Postable result for a finished daily: squares, not spoilers."""
+    if state.get("mode") not in ("daily", "practice") or state["phase"] != "complete":
+        return None
+    day = state.get("daily_date")
+    if not day:
+        return None
+    season = json.loads(row["season"]) if row["season"] else None
+    best = _best_possible(state) or {"overall": 0, "picks": {}}
+    grid = daily_mode.result_grid(state["position"], state["board"], best["picks"])
+    board = _board(state)
+    streak = 0
+    if state.get("mode") == "daily" and row["player_token"]:
+        streak = daily_mode.streak_from_dates(db.daily_history(row["player_token"]))
+    return {
+        "day": day,
+        "day_number": daily_mode.day_number(day),
+        "grid": grid,
+        "practice": state.get("mode") == "practice",
+        "text": daily_mode.share_text(
+            day=day,
+            position_name=POSITIONS[state["position"]]["name"],
+            era_name=ERAS[state["era"]]["name"],
+            overall=board.overall,
+            grade=season["grade"] if season else "-",
+            grid=grid,
+            optimum=best["overall"],
+            streak=streak,
+        ),
     }
 
 
@@ -384,6 +417,7 @@ def daily(player_token: str | None = None) -> dict:
         **setup,
         "already_played": attempt is not None,
         "attempt": attempt,
+        "day_number": daily_mode.day_number(setup["date"]),
         "streak": daily_mode.streak_from_dates(history),
         "days_played": len(history),
         "leaderboard": db.daily_leaderboard(setup["date"]),
@@ -401,16 +435,22 @@ def create_run(body: CreateRun) -> dict:
 
     position, era, seed = body.position, body.era, secrets.randbelow(2**31)
     daily_date = None
-    if body.mode == "daily":
-        setup = daily_mode.config()
+    if body.mode in ("daily", "practice"):
+        # Practice replays a specific day's spins; the daily always means today.
+        day = body.daily_date if body.mode == "practice" and body.daily_date else None
+        try:
+            setup = daily_mode.config(day)
+        except ValueError:
+            raise HTTPException(400, "daily_date must look like YYYY-MM-DD") from None
         # The whole point is that everyone faces identical spins, so the client
         # does not get to choose any of this.
         position, era, seed = setup["position"], setup["era"], setup["seed"]
         daily_date = setup["date"]
-        if not body.player_token:
-            raise HTTPException(400, "the daily challenge needs a player token")
-        if db.daily_attempt(daily_date, body.player_token):
-            raise HTTPException(409, "you have already played today's challenge")
+        if body.mode == "daily":
+            if not body.player_token:
+                raise HTTPException(400, "the daily challenge needs a player token")
+            if db.daily_attempt(daily_date, body.player_token):
+                raise HTTPException(409, "you have already played today's challenge")
 
     state = {
         "player_name": body.player_name,

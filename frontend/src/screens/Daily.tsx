@@ -6,6 +6,7 @@ import type { DailyInfo } from '../types'
 interface Props {
   onPlay: (name: string) => void
   onResume: (runId: string) => void
+  onPractice: () => void
   busy: boolean
 }
 
@@ -15,7 +16,7 @@ function countdown(seconds: number): string {
   return `${h}h ${m}m`
 }
 
-export function Daily({ onPlay, onResume, busy }: Props) {
+export function Daily({ onPlay, onResume, onPractice, busy }: Props) {
   const [info, setInfo] = useState<DailyInfo | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [name, setName] = useState('')
@@ -46,7 +47,9 @@ export function Daily({ onPlay, onResume, busy }: Props) {
   return (
     <div className="page">
       <div className="page-head">
-        <div className="eyebrow">Daily challenge · {info.date}</div>
+        <div className="eyebrow">
+          Daily challenge · Day {info.day_number} · {info.date}
+        </div>
         <h2>Everyone gets the same players</h2>
         <p>
           One attempt. The same spins, in the same order, for every player in the world today — so
@@ -87,12 +90,21 @@ export function Daily({ onPlay, onResume, busy }: Props) {
                     You've played today — <b>{info.attempt?.overall} OVR</b>, graded{' '}
                     <b>{info.attempt?.grade}</b>. Come back tomorrow for a new set.
                   </p>
-                  <button
-                    className="btn btn-ghost btn-sm"
-                    onClick={() => info.attempt && onResume(info.attempt.id)}
-                  >
-                    View today's result
-                  </button>
+                  <div className="btn-row">
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => info.attempt && onResume(info.attempt.id)}
+                    >
+                      View today's result
+                    </button>
+                    <button className="btn btn-primary btn-sm" disabled={busy} onClick={onPractice}>
+                      Practice today's spins
+                    </button>
+                  </div>
+                  <p className="hint">
+                    Practice replays the same thirteen players as often as you like. It never
+                    counts and never touches the board.
+                  </p>
                 </>
               ) : (
                 <>

@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field, field_validator
 from .data.attributes import ERAS, POSITIONS
 
 
-MODES = {"season", "career", "daily"}
+MODES = {"season", "career", "daily", "practice"}
 
 
 class CreateRun(BaseModel):
@@ -19,6 +19,8 @@ class CreateRun(BaseModel):
     # attempt; nowhere near enough to stop a determined one, which is the price
     # of not having accounts.
     player_token: str | None = Field(default=None, max_length=64)
+    # Practice runs replay a past daily's exact spins. Defaults to today.
+    daily_date: str | None = Field(default=None, max_length=10)
 
     @field_validator("mode")
     @classmethod

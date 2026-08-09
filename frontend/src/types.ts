@@ -1,6 +1,6 @@
 export type PositionKey = 'ST' | 'MID' | 'DEF' | 'GK'
 export type Phase = 'building' | 'built' | 'vetoed' | 'drafted' | 'career' | 'complete'
-export type Mode = 'season' | 'career' | 'daily'
+export type Mode = 'season' | 'career' | 'daily' | 'practice'
 
 export interface AttributeMeta {
   key: string
@@ -246,6 +246,15 @@ export interface Run {
   daily_date: string | null
   career: CareerState | null
   best_possible: BestPossible | null
+  share: DailyShare | null
+}
+
+export interface DailyShare {
+  day: string
+  day_number: number
+  grid: string
+  practice: boolean
+  text: string
 }
 
 export interface HallOfFameEntry {
@@ -286,6 +295,7 @@ export interface DailyInfo {
   era: string
   era_name: string
   resets_in: number
+  day_number: number
   already_played: boolean
   attempt: { id: string; phase: string; overall: number | null; grade: string | null } | null
   streak: number

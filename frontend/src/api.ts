@@ -41,6 +41,20 @@ export const api = {
       body: JSON.stringify({ player_name, position, era, mode, player_token: playerToken() }),
     }),
 
+  /** Replay a past daily's exact spins. Never counts, never blocked. */
+  practice: (player_name: string, daily_date?: string) =>
+    request<Run>('/runs', {
+      method: 'POST',
+      body: JSON.stringify({
+        player_name,
+        position: 'ST',
+        era: 'current',
+        mode: 'practice',
+        daily_date,
+        player_token: playerToken(),
+      }),
+    }),
+
   startCareer: (id: string, nationality: string) =>
     request<Run>(`/runs/${id}/career/start`, {
       method: 'POST',

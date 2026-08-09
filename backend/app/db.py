@@ -323,7 +323,8 @@ def daily_attempt(day: str, player_token: str) -> dict | None:
         cur.execute(
             _sql(
                 "SELECT id, phase, overall, grade FROM runs"
-                " WHERE daily_date = ? AND player_token = ? ORDER BY created_at LIMIT 1"
+                " WHERE daily_date = ? AND player_token = ? AND mode = 'daily'"
+                " ORDER BY created_at LIMIT 1"
             ),
             (day, player_token),
         )
@@ -336,7 +337,7 @@ def daily_leaderboard(day: str, limit: int = 25) -> list[dict]:
             _sql(
                 "SELECT player_name, overall, grade, goals, assists, clean_sheets,"
                 " avg_rating, club_name, league_pos FROM runs"
-                " WHERE daily_date = ? AND completed_at IS NOT NULL"
+                " WHERE daily_date = ? AND completed_at IS NOT NULL AND mode = 'daily'"
                 " ORDER BY overall DESC, avg_rating DESC LIMIT ?"
             ),
             (day, limit),
@@ -350,7 +351,7 @@ def daily_history(player_token: str, limit: int = 400) -> list[str]:
         cur.execute(
             _sql(
                 "SELECT DISTINCT daily_date FROM runs WHERE player_token = ?"
-                " AND completed_at IS NOT NULL AND daily_date IS NOT NULL"
+                " AND completed_at IS NOT NULL AND daily_date IS NOT NULL AND mode = 'daily'"
                 " ORDER BY daily_date DESC LIMIT ?"
             ),
             (player_token, limit),
@@ -421,7 +422,12 @@ HOF_SORTS = {
 def hall_of_fame(sort: str = "overall", position: str | None = None, limit: int = 50) -> list[dict]:
     # `order` is chosen from a fixed allow-list, never interpolated from user input.
     order = HOF_SORTS.get(sort, HOF_SORTS["overall"])
-    query = f"SELECT {HOF_COLUMNS} FROM runs WHERE completed_at IS NOT NULL"
+    # Practice is unlimited attempts at one fixed seed, so it is excluded here --
+    # otherwise the top of the board is just whoever replayed the same day most.
+    query = (
+        f"SELECT {HOF_COLUMNS} FROM runs WHERE completed_at IS NOT NULL"
+        " AND (mode IS NULL OR mode <> 'practice')"
+    )
     params: list = []
     if position:
         query += " AND position = ?"
@@ -468,8 +474,10 @@ def stats() -> dict:
             "SELECT COUNT(*) AS total,"
             " MAX(overall) AS best_overall,"
             " (SELECT player_name FROM runs WHERE completed_at IS NOT NULL"
+            "  AND (mode IS NULL OR mode <> 'practice')"
             "  ORDER BY overall DESC LIMIT 1) AS best_player"
             " FROM runs WHERE completed_at IS NOT NULL"
+            " AND (mode IS NULL OR mode <> 'practice')"
         )
         row = _row_to_dict(cur.fetchone()) or {}
     return {

@@ -82,6 +82,11 @@ export default function App() {
     await act(() => api.createRun(name || 'Your Player', 'ST', 'current', 'daily')).catch(() => {})
   }
 
+  const startPractice = async (dailyDate?: string) => {
+    setView('game')
+    await act(() => api.practice(run?.player_name || 'Your Player', dailyDate)).catch(() => {})
+  }
+
   const resumeRun = async (runId: string) => {
     setView('game')
     await act(() => api.getRun(runId)).catch(() => {})
@@ -117,7 +122,10 @@ export default function App() {
 
   const body = () => {
     if (view === 'hof') return <HallOfFame onBack={() => setView('game')} />
-    if (view === 'daily') return <Daily onPlay={startDaily} onResume={resumeRun} busy={busy} />
+    if (view === 'daily')
+      return (
+        <Daily onPlay={startDaily} onResume={resumeRun} onPractice={() => startPractice()} busy={busy} />
+      )
     if (!run)
       return <Home meta={meta} onStart={start} onDaily={() => setView('daily')} busy={busy} />
 
@@ -184,8 +192,10 @@ export default function App() {
           <SeasonReport
             run={run}
             meta={meta}
+            busy={busy}
             onRestart={restart}
             onHallOfFame={() => setView('hof')}
+            onPractice={() => startPractice(run.daily_date ?? undefined)}
           />
         )
       default:
