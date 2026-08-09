@@ -7,6 +7,7 @@ offered player is stored server-side until it is taken or skipped.
 
 from __future__ import annotations
 
+import functools
 import json
 import os
 import random
@@ -261,8 +262,14 @@ def health() -> dict:
     }
 
 
-@app.get("/api/meta")
-def meta() -> dict:
+@functools.lru_cache(maxsize=1)
+def _static_meta() -> dict:
+    """Everything in /api/meta that can never change while the process lives.
+
+    Positions, clubs and the full roster map are derived from constants, so this
+    ~20KB structure was being rebuilt and re-serialised on every request. Only the
+    hall-of-fame counters are dynamic; they get merged in per call.
+    """
     return {
         "positions": [
             {
@@ -302,8 +309,12 @@ def meta() -> dict:
         },
         # era -> position -> club -> names, so the spin reel can show real players.
         "rosters": game.rosters(),
-        "stats": db.stats(),
     }
+
+
+@app.get("/api/meta")
+def meta() -> dict:
+    return {**_static_meta(), "stats": db.stats()}
 
 
 # --------------------------------------------------------------------------- #

@@ -1,3 +1,4 @@
+import { useCountUpAll, useTilt } from '../lib/motion'
 import type { AttributeMeta } from '../types'
 
 interface Props {
@@ -12,6 +13,8 @@ interface Props {
   era?: string
   /** Render an unrevealed card back instead of the real thing. */
   blank?: boolean
+  /** Count the stats up on mount. Off for the always-visible build preview. */
+  animate?: boolean
 }
 
 const Silhouette = () => (
@@ -34,42 +37,61 @@ export function PlayerCard({
   club,
   era,
   blank = false,
+  animate = false,
 }: Props) {
+  const tilt = useTilt(11)
+
+  const numeric: Record<string, number> = {}
+  for (const [k, v] of Object.entries(ratings)) if (v != null) numeric[k] = v
+  const counted = useCountUpAll(animate ? numeric : null, 800, animate)
+
   const cls = blank ? 'fut-blank' : `fut-${cardKey}`
+
   return (
-    <div className={`fut-card ${cls}`}>
-      <div className="fut-top">
-        <div>
-          <div className="fut-ovr">{blank ? '??' : overall}</div>
-          <div className="fut-pos">{position}</div>
+    <div
+      className="fut-tilt"
+      ref={tilt.ref}
+      onPointerMove={tilt.onPointerMove}
+      onPointerLeave={tilt.onPointerLeave}
+    >
+      <div className={`fut-card ${cls}`}>
+        <div className="fut-holo" aria-hidden="true" />
+        <div className="fut-glare" aria-hidden="true" />
+
+        <div className="fut-top">
+          <div>
+            <div className="fut-ovr">{blank ? '??' : overall}</div>
+            <div className="fut-pos">{position}</div>
+          </div>
+          <div className="fut-badges">
+            <div>{blank ? '—' : cardLabel}</div>
+            {era && <div style={{ marginTop: 4 }}>{era === 'legends' ? 'Legends' : '25/26'}</div>}
+          </div>
         </div>
-        <div className="fut-badges">
-          <div>{blank ? '—' : cardLabel}</div>
-          {era && <div style={{ marginTop: 4 }}>{era === 'legends' ? 'Legends' : '25/26'}</div>}
+
+        <div className="fut-silhouette">
+          <Silhouette />
         </div>
-      </div>
 
-      <div className="fut-silhouette">
-        <Silhouette />
-      </div>
+        <div className="fut-name">{blank ? '?????' : name}</div>
 
-      <div className="fut-name">{blank ? '?????' : name}</div>
+        <div className="fut-attrs">
+          {attributes.map((a) => {
+            const raw = ratings[a.key]
+            const shown = raw == null ? null : animate ? (counted[a.key] ?? raw) : raw
+            return (
+              <div key={a.key} className={`fut-attr${raw == null ? ' empty' : ''}`}>
+                <b>{shown == null ? '--' : shown}</b>
+                <span>{a.short}</span>
+              </div>
+            )
+          })}
+        </div>
 
-      <div className="fut-attrs">
-        {attributes.map((a) => {
-          const v = ratings[a.key]
-          return (
-            <div key={a.key} className={`fut-attr${v == null ? ' empty' : ''}`}>
-              <b>{v == null ? '--' : v}</b>
-              <span>{a.short}</span>
-            </div>
-          )
-        })}
-      </div>
-
-      <div className="fut-foot">
-        <span>{club ?? 'Free agent'}</span>
-        <span>Build A Baller</span>
+        <div className="fut-foot">
+          <span>{club ?? 'Free agent'}</span>
+          <span>Build A Baller</span>
+        </div>
       </div>
     </div>
   )

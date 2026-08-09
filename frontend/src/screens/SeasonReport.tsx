@@ -1,7 +1,26 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
+import { Celebration } from '../components/Celebration'
 import { PlayerCard } from '../components/PlayerCard'
+import { ShareCard } from '../components/ShareCard'
+import { play, useCountUp } from '../lib/motion'
 import type { LeaderRow, Meta, Run } from '../types'
+
+/** A stat tile whose number counts up on arrival. */
+function Tile({ value, label, tone, decimals = 0 }: {
+  value: number
+  label: string
+  tone?: 'accent' | 'gold'
+  decimals?: number
+}) {
+  const shown = useCountUp(Math.round(value * 10 ** decimals), 1100)
+  return (
+    <div className={`tile${tone ? ` ${tone}` : ''}`}>
+      <b>{(shown / 10 ** decimals).toFixed(decimals)}</b>
+      <span>{label}</span>
+    </div>
+  )
+}
 
 interface Props {
   run: Run
@@ -82,8 +101,29 @@ export function SeasonReport({ run, meta, onRestart, onHallOfFame }: Props) {
 
   const maxMonthly = Math.max(1, ...season.monthly.map((m) => m.goals + m.assists))
 
+  // Reveal the headlines one at a time -- a wall of text lands as nothing.
+  const [shownHeadlines, setShownHeadlines] = useState(0)
+  useEffect(() => {
+    if (shownHeadlines >= season.headlines.length) return
+    const id = window.setTimeout(() => setShownHeadlines((n) => n + 1), 260)
+    return () => window.clearTimeout(id)
+  }, [shownHeadlines, season.headlines.length])
+
+  // A trophy or a title deserves confetti.
+  const wonSomething = season.awards.some((a) => a.you_won) || season.club.position === 1
+  const [burst, setBurst] = useState(0)
+  useEffect(() => {
+    if (!wonSomething) return
+    const id = window.setTimeout(() => {
+      setBurst(1)
+      play('fanfare')
+    }, 700)
+    return () => window.clearTimeout(id)
+  }, [wonSomething])
+
   return (
     <div className="page">
+      <Celebration trigger={burst} intensity="trophy" />
       <div className="season-hero">
         <div className="reveal-card-holder">
           <PlayerCard
@@ -96,6 +136,7 @@ export function SeasonReport({ run, meta, onRestart, onHallOfFame }: Props) {
             cardLabel={run.card.card_label}
             club={season.club.name}
             era={run.era}
+            animate
           />
         </div>
 
@@ -113,7 +154,7 @@ export function SeasonReport({ run, meta, onRestart, onHallOfFame }: Props) {
           </div>
 
           <div className="headlines">
-            {season.headlines.map((h, i) => (
+            {season.headlines.slice(0, shownHeadlines).map((h, i) => (
               <div className="headline" key={i}>
                 {h}
               </div>
@@ -123,42 +164,14 @@ export function SeasonReport({ run, meta, onRestart, onHallOfFame }: Props) {
       </div>
 
       <div className="tiles">
-        <div className="tile">
-          <b>{p.apps}</b>
-          <span>Appearances</span>
-        </div>
-        <div className="tile accent">
-          <b>{p.goals}</b>
-          <span>League goals</span>
-        </div>
-        <div className="tile accent">
-          <b>{p.assists}</b>
-          <span>League assists</span>
-        </div>
-        {isDefensive && (
-          <div className="tile">
-            <b>{p.clean_sheets}</b>
-            <span>Clean sheets</span>
-          </div>
-        )}
-        {isKeeper && (
-          <div className="tile">
-            <b>{p.saves}</b>
-            <span>Saves</span>
-          </div>
-        )}
-        <div className="tile gold">
-          <b>{p.avg_rating.toFixed(2)}</b>
-          <span>Avg rating</span>
-        </div>
-        <div className="tile">
-          <b>{p.motm}</b>
-          <span>Man of the match</span>
-        </div>
-        <div className="tile">
-          <b>{p.minutes.toLocaleString()}</b>
-          <span>Minutes</span>
-        </div>
+        <Tile value={p.apps} label="Appearances" />
+        <Tile value={p.goals} label="League goals" tone="accent" />
+        <Tile value={p.assists} label="League assists" tone="accent" />
+        {isDefensive && <Tile value={p.clean_sheets} label="Clean sheets" />}
+        {isKeeper && <Tile value={p.saves} label="Saves" />}
+        <Tile value={p.avg_rating} label="Avg rating" tone="gold" decimals={2} />
+        <Tile value={p.motm} label="Man of the match" />
+        <Tile value={p.minutes} label="Minutes" />
       </div>
 
       <div className="tabs">
@@ -457,6 +470,8 @@ export function SeasonReport({ run, meta, onRestart, onHallOfFame }: Props) {
           </p>
         </div>
       )}
+
+      <ShareCard run={run} attributes={attributes} />
 
       <div className="btn-row" style={{ marginTop: 30, justifyContent: 'center' }}>
         <button className="btn btn-primary" onClick={onRestart}>

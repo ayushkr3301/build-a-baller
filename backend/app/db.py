@@ -103,12 +103,26 @@ CREATE TABLE IF NOT EXISTS runs (
     clean_sheets  INTEGER,
     league_pos    INTEGER,
     avg_rating    {REAL},
+    club_name     TEXT,
+    awards        TEXT,
     state         TEXT NOT NULL,
     season        TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_runs_overall ON runs(overall DESC);
 CREATE INDEX IF NOT EXISTS idx_runs_completed ON runs(completed_at DESC);
 """
+
+# The leaderboard needs a club name and a list of honours. Both live inside the
+# season JSON, which is ~20KB a row -- reading fifty of those to pull two short
+# strings meant a megabyte off the wire per request. They're written out to their
+# own columns at save time instead, so the listing never touches the blob.
+DENORMALISED_COLUMNS = (("club_name", "TEXT"), ("awards", "TEXT"))
+
+# Columns the hall of fame actually reads. Never SELECT *, or `season` comes too.
+HOF_COLUMNS = (
+    "id, player_name, position, era, overall, club_id, club_name, grade, goals,"
+    " assists, clean_sheets, league_pos, avg_rating, completed_at, awards"
+)
 
 
 def _schema() -> str:
@@ -138,7 +152,22 @@ def _connect_sqlite() -> sqlite3.Connection:
 _initialised = False
 
 
+def _existing_columns(conn) -> set[str]:
+    if IS_POSTGRES:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT column_name FROM information_schema.columns WHERE table_name = 'runs'"
+            )
+            return {dict(r)["column_name"] for r in cur.fetchall()}
+    return {row[1] for row in conn.execute("PRAGMA table_info(runs)").fetchall()}
+
+
 def _ensure_schema(conn) -> None:
+    """Create the table, then add any columns a database predating them is missing.
+
+    SQLite has no ADD COLUMN IF NOT EXISTS, so both backends go through the same
+    introspect-then-add path rather than special-casing one of them.
+    """
     global _initialised
     if _initialised:
         return
@@ -149,6 +178,19 @@ def _ensure_schema(conn) -> None:
     else:
         conn.executescript(_schema())
         conn.commit()
+
+    present = _existing_columns(conn)
+    missing = [(name, kind) for name, kind in DENORMALISED_COLUMNS if name not in present]
+    if missing:
+        for name, kind in missing:
+            statement = f"ALTER TABLE runs ADD COLUMN {name} {kind}"
+            if IS_POSTGRES:
+                with conn.cursor() as cur:
+                    cur.execute(statement)
+            else:
+                conn.execute(statement)
+        if not IS_POSTGRES:
+            conn.commit()
     _initialised = True
 
 
@@ -269,12 +311,13 @@ def save_state(
 
 def save_season(run_id: str, state: dict, season: dict) -> None:
     player = season["player"]
+    awards = [a["title"] for a in season.get("awards", []) if a.get("you_won")]
     with cursor() as cur:
         cur.execute(
             _sql(
                 "UPDATE runs SET state = ?, phase = ?, season = ?, completed_at = ?, grade = ?,"
-                " goals = ?, assists = ?, clean_sheets = ?, league_pos = ?, avg_rating = ?"
-                " WHERE id = ?"
+                " goals = ?, assists = ?, clean_sheets = ?, league_pos = ?, avg_rating = ?,"
+                " club_name = ?, awards = ? WHERE id = ?"
             ),
             (
                 json.dumps(state),
@@ -287,6 +330,8 @@ def save_season(run_id: str, state: dict, season: dict) -> None:
                 player["clean_sheets"],
                 season["club"]["position"],
                 player["avg_rating"],
+                season["club"]["name"],
+                json.dumps(awards),
                 run_id,
             ),
         )
@@ -314,7 +359,7 @@ HOF_SORTS = {
 def hall_of_fame(sort: str = "overall", position: str | None = None, limit: int = 50) -> list[dict]:
     # `order` is chosen from a fixed allow-list, never interpolated from user input.
     order = HOF_SORTS.get(sort, HOF_SORTS["overall"])
-    query = "SELECT * FROM runs WHERE completed_at IS NOT NULL"
+    query = f"SELECT {HOF_COLUMNS} FROM runs WHERE completed_at IS NOT NULL"
     params: list = []
     if position:
         query += " AND position = ?"
@@ -328,7 +373,10 @@ def hall_of_fame(sort: str = "overall", position: str | None = None, limit: int 
 
     out = []
     for r in rows:
-        season = json.loads(r["season"]) if r["season"] else {}
+        try:
+            awards = json.loads(r["awards"]) if r["awards"] else []
+        except (TypeError, ValueError):
+            awards = []
         out.append(
             {
                 "id": r["id"],
@@ -337,7 +385,7 @@ def hall_of_fame(sort: str = "overall", position: str | None = None, limit: int 
                 "era": r["era"],
                 "overall": r["overall"],
                 "club_id": r["club_id"],
-                "club": season.get("club", {}).get("name"),
+                "club": r["club_name"],
                 "grade": r["grade"],
                 "goals": r["goals"],
                 "assists": r["assists"],
@@ -345,23 +393,25 @@ def hall_of_fame(sort: str = "overall", position: str | None = None, limit: int 
                 "league_pos": r["league_pos"],
                 "avg_rating": r["avg_rating"],
                 "completed_at": r["completed_at"],
-                "awards": [a["title"] for a in season.get("awards", []) if a.get("you_won")],
+                "awards": awards,
             }
         )
     return out
 
 
 def stats() -> dict:
+    """Total completed runs and the best build, in a single round trip."""
     with cursor() as cur:
-        cur.execute("SELECT COUNT(*) AS c FROM runs WHERE completed_at IS NOT NULL")
-        total = dict(cur.fetchone())["c"]
         cur.execute(
-            "SELECT player_name, overall FROM runs WHERE completed_at IS NOT NULL"
-            " ORDER BY overall DESC LIMIT 1"
+            "SELECT COUNT(*) AS total,"
+            " MAX(overall) AS best_overall,"
+            " (SELECT player_name FROM runs WHERE completed_at IS NOT NULL"
+            "  ORDER BY overall DESC LIMIT 1) AS best_player"
+            " FROM runs WHERE completed_at IS NOT NULL"
         )
-        best = _row_to_dict(cur.fetchone())
+        row = _row_to_dict(cur.fetchone()) or {}
     return {
-        "runs_completed": total,
-        "best_overall": best["overall"] if best else None,
-        "best_player": best["player_name"] if best else None,
+        "runs_completed": row.get("total", 0),
+        "best_overall": row.get("best_overall"),
+        "best_player": row.get("best_player"),
     }

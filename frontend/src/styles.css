@@ -86,6 +86,47 @@ button:disabled {
   min-height: 100%;
   display: flex;
   flex-direction: column;
+  position: relative;
+}
+
+/* A slow floodlight sweep so the page is never completely still. Cheap: one
+   composited element, transform only, no repaint. */
+.app::before {
+  content: '';
+  position: fixed;
+  inset: -30% -50%;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 40% 30% at 20% 20%, rgba(61, 220, 132, 0.09), transparent 60%),
+    radial-gradient(ellipse 34% 26% at 80% 70%, rgba(106, 169, 255, 0.07), transparent 60%);
+  animation: drift 34s ease-in-out infinite alternate;
+}
+
+.app > * {
+  position: relative;
+  z-index: 1;
+}
+
+@keyframes drift {
+  from {
+    transform: translate3d(-3%, -2%, 0) scale(1);
+  }
+  to {
+    transform: translate3d(4%, 3%, 0) scale(1.12);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app::before {
+    animation: none;
+  }
+  .fut-card::after {
+    animation: none;
+  }
+  .btn-spin {
+    animation: none;
+  }
 }
 
 .topbar {
@@ -416,6 +457,66 @@ button:disabled {
 
 /* ------------------------------------------------------------------ FUT card */
 
+/* The card is the hero object, so it gets to behave like a physical one:
+   it leans toward the cursor and carries a light source that follows it. */
+.fut-tilt {
+  perspective: 1100px;
+  display: inline-block;
+}
+
+.fut-tilt .fut-card {
+  transform: rotateX(var(--tilt-x, 0deg)) rotateY(var(--tilt-y, 0deg));
+  transform-style: preserve-3d;
+  transition: transform 0.35s cubic-bezier(0.2, 0.9, 0.25, 1);
+}
+
+.fut-tilt:hover .fut-card {
+  /* Snappier while tracking; the slow transition is for the return to rest. */
+  transition: transform 0.08s linear;
+}
+
+.fut-holo,
+.fut-glare {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+}
+
+.fut-holo {
+  opacity: calc(var(--shine-opacity, 0) * 0.5);
+  background: repeating-linear-gradient(
+    115deg,
+    transparent 0 6px,
+    rgba(255, 255, 255, 0.5) 6px 8px,
+    transparent 8px 14px
+  );
+  mix-blend-mode: overlay;
+  transition: opacity 0.3s;
+}
+
+.fut-glare {
+  opacity: var(--shine-opacity, 0);
+  background: radial-gradient(
+    circle at var(--shine-x, 50%) var(--shine-y, 50%),
+    rgba(255, 255, 255, 0.55),
+    transparent 45%
+  );
+  mix-blend-mode: soft-light;
+  transition: opacity 0.3s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fut-tilt .fut-card {
+    transform: none;
+    transition: none;
+  }
+  .fut-holo,
+  .fut-glare {
+    display: none;
+  }
+}
+
 .fut-card {
   position: relative;
   width: 300px;
@@ -719,9 +820,28 @@ button:disabled {
   border-radius: 10px;
   border: 1px solid var(--line);
   background: var(--surface);
-  transition: all 0.14s;
+  transition: border-color 0.14s, background 0.14s, transform 0.14s;
   width: 100%;
   text-align: left;
+  /* staggered by inline animation-delay so the list deals itself out */
+  animation: deal 0.34s cubic-bezier(0.2, 0.9, 0.25, 1) backwards;
+}
+
+@keyframes deal {
+  from {
+    opacity: 0;
+    transform: translateY(9px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .attr-row {
+    animation: none;
+  }
 }
 
 .attr-row:not(.locked):hover {
@@ -971,66 +1091,152 @@ button:disabled {
   color: var(--muted-dim);
 }
 
-/* two-stage reel: club first, then a player from that club */
+/* two-stage reel: club first, then a player from that club.
+   A real translated column, so the last rows visibly crawl into place. */
 
-.reel-stages {
+.reel {
   display: grid;
-  gap: 10px;
-  width: min(520px, 100%);
-}
-
-.reel-step {
-  display: grid;
-  grid-template-columns: 70px 1fr;
+  grid-template-columns: 74px 1fr;
   align-items: center;
-  gap: 14px;
-  padding: 16px 18px;
-  border-radius: 12px;
+  gap: 16px;
+  width: min(540px, 100%);
+  padding: 12px 20px;
+  border-radius: 14px;
   border: 1px solid var(--line);
-  background: var(--surface);
-  opacity: 0.4;
-  transition: opacity 0.2s, border-color 0.2s;
+  background: linear-gradient(100deg, var(--surface-2), var(--surface));
+  transition: border-color 0.25s, box-shadow 0.25s;
 }
 
-.reel-step.live {
-  opacity: 1;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1px rgba(61, 220, 132, 0.35);
+.reel-landed {
+  border-color: rgba(255, 226, 122, 0.55);
+  box-shadow: 0 0 0 1px rgba(255, 226, 122, 0.28), 0 0 34px rgba(255, 226, 122, 0.12);
 }
 
-.reel-step.done {
-  opacity: 0.85;
-}
-
-.reel-step.landed {
-  opacity: 1;
-  border-color: #ffe27a;
-  box-shadow: 0 0 0 1px rgba(255, 226, 122, 0.4);
-  animation: pop 0.4s cubic-bezier(0.2, 1.4, 0.4, 1);
-}
-
-.reel-step.landed .reel-step-value {
-  color: #ffe27a;
-}
-
-.reel-step-label {
+.reel-label {
   font-size: 10px;
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--muted-dim);
 }
 
-.reel-step-value {
-  font-family: var(--display);
-  font-size: 28px;
-  letter-spacing: 0.03em;
+.reel-window {
+  position: relative;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  -webkit-mask-image: linear-gradient(180deg, transparent, #000 26%, #000 74%, transparent);
+  mask-image: linear-gradient(180deg, transparent, #000 26%, #000 74%, transparent);
 }
 
-.reel-step.live .reel-step-value {
-  color: var(--accent);
+.reel-strip {
+  will-change: transform;
+}
+
+.reel-row {
+  display: flex;
+  align-items: center;
+  font-family: var(--display);
+  font-size: 27px;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pull-banner {
+  padding: 9px 22px;
+  border-radius: 999px;
+  font-family: var(--display);
+  font-size: 19px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #0b1710;
+  animation: pop 0.45s cubic-bezier(0.2, 1.5, 0.4, 1);
+}
+
+/* The tier chips are small light pills, so their darkest variant assumes dark
+   text on a pale ground. At banner size tier 4 is dark-on-dark and vanishes. */
+.pull-banner.tier-4 {
+  background: var(--surface-3);
+  color: var(--text);
+  border: 1px solid var(--line-strong);
+}
+
+.toggle-row {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+/* the spin button should look like it wants to be pressed */
+.btn-spin {
+  position: relative;
+  animation: breathe 2.6s ease-in-out infinite;
+}
+
+@keyframes breathe {
+  0%,
+  100% {
+    box-shadow: 0 10px 26px rgba(61, 220, 132, 0.24);
+  }
+  50% {
+    box-shadow: 0 10px 40px rgba(61, 220, 132, 0.46);
+  }
+}
+
+/* celebration + screen flash */
+
+.celebration {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 60;
+}
+
+.screen-flash {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 55;
+  animation: flash-out 0.9s ease-out forwards;
+}
+
+.flash-icon {
+  background: radial-gradient(circle at 50% 55%, rgba(255, 226, 122, 0.42), transparent 62%);
+}
+
+.flash-star {
+  background: radial-gradient(circle at 50% 55%, rgba(226, 235, 245, 0.3), transparent 62%);
+}
+
+@keyframes flash-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+/* share */
+
+.share-panel {
+  margin-top: 18px;
+}
+
+.share-preview {
+  margin: 14px 0 0;
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  overflow-x: auto;
 }
 
 .club-landed {

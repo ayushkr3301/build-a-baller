@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
+import { Celebration } from '../components/Celebration'
 import { PlayerCard } from '../components/PlayerCard'
+import { SlotReel } from '../components/SlotReel'
 import { Stepper } from '../components/Stepper'
+import { play, setSoundEnabled, soundEnabled, useCountUpAll } from '../lib/motion'
 import type { AttributeMeta, Meta, Run } from '../types'
 
 interface Props {
@@ -17,8 +20,8 @@ interface Props {
 type Stage = 'idle' | 'clubs' | 'club-landed' | 'players' | 'player-landed' | 'done'
 
 const TIMING = {
-  normal: { clubReel: 1300, clubHold: 700, playerReel: 1300, playerHold: 650 },
-  fast: { clubReel: 380, clubHold: 200, playerReel: 380, playerHold: 200 },
+  normal: { clubReel: 1500, clubHold: 550, playerReel: 1700, playerHold: 800 },
+  fast: { clubReel: 420, clubHold: 160, playerReel: 460, playerHold: 220 },
 }
 
 const FAST_KEY = 'bab.fastSpins'
@@ -30,76 +33,43 @@ function valueClass(v: number) {
   return 'v-poor'
 }
 
-/** Ticks each attribute value up from zero when a player lands. */
-function useCountUp(target: Record<string, number> | null, active: boolean, ms = 620) {
-  const [shown, setShown] = useState<Record<string, number>>({})
-  const raf = useRef<number>()
-
-  useEffect(() => {
-    if (!target || !active) {
-      setShown({})
-      return
-    }
-    const start = performance.now()
-    const tick = (now: number) => {
-      const t = Math.min(1, (now - start) / ms)
-      const eased = 1 - Math.pow(1 - t, 3)
-      const next: Record<string, number> = {}
-      for (const [k, v] of Object.entries(target)) next[k] = Math.round(v * eased)
-      setShown(next)
-      if (t < 1) raf.current = requestAnimationFrame(tick)
-    }
-    raf.current = requestAnimationFrame(tick)
-    return () => {
-      if (raf.current) cancelAnimationFrame(raf.current)
-    }
-  }, [target, active, ms])
-
-  return shown
-}
-
 export function Build({ run, meta, onSpin, onTake, onSkip, busy }: Props) {
   const [stage, setStage] = useState<Stage>(run.current_offer ? 'done' : 'idle')
-  const [reelText, setReelText] = useState('')
   const [fast, setFast] = useState(() => localStorage.getItem(FAST_KEY) === '1')
+  const [sound, setSound] = useState(soundEnabled)
+  const [burst, setBurst] = useState(0)
+  const [flash, setFlash] = useState<string | null>(null)
 
   const timers = useRef<number[]>([])
-  const cycler = useRef<number>()
 
   const attributes: AttributeMeta[] =
     meta.positions.find((p) => p.key === run.position)?.attributes ?? []
   const offer = run.current_offer
-  const counted = useCountUp(offer ? offer.ratings : null, stage === 'done')
+
+  const numericRatings = useMemo(() => (offer ? offer.ratings : null), [offer])
+  const counted = useCountUpAll(numericRatings, 700, stage === 'done')
 
   const roster = useMemo(
     () => meta.rosters?.[run.era]?.[run.position] ?? {},
     [meta.rosters, run.era, run.position],
   )
-  const clubIds = useMemo(() => Object.keys(roster), [roster])
+  const clubNames = useMemo(
+    () => Object.keys(roster).map((id) => meta.display_clubs[id]?.name ?? id.toUpperCase()),
+    [roster, meta.display_clubs],
+  )
+  const offerClub = offer ? meta.display_clubs[offer.club_id] : undefined
+  const clubSquad = offer ? (roster[offer.club_id] ?? [offer.name]) : []
 
   const clearTimers = useCallback(() => {
     timers.current.forEach(window.clearTimeout)
     timers.current = []
-    if (cycler.current) window.clearInterval(cycler.current)
   }, [])
 
   useEffect(() => clearTimers, [clearTimers])
 
-  // A fresh offer arriving from the server (e.g. a page reload mid-run) shows straight away.
   useEffect(() => {
     if (!offer && stage === 'done') setStage('idle')
   }, [offer, stage])
-
-  const cycle = useCallback((items: string[]) => {
-    if (cycler.current) window.clearInterval(cycler.current)
-    if (!items.length) return
-    let i = Math.floor(Math.random() * items.length)
-    setReelText(items[i])
-    cycler.current = window.setInterval(() => {
-      i = (i + 1) % items.length
-      setReelText(items[i])
-    }, 70)
-  }, [])
 
   const settle = useCallback(() => {
     clearTimers()
@@ -109,8 +79,6 @@ export function Build({ run, meta, onSpin, onTake, onSkip, busy }: Props) {
   const handleSpin = async () => {
     const t = fast ? TIMING.fast : TIMING.normal
     setStage('clubs')
-    cycle(clubIds.map((id) => meta.display_clubs[id]?.short ?? id.toUpperCase()))
-
     try {
       await onSpin()
     } catch {
@@ -119,23 +87,18 @@ export function Build({ run, meta, onSpin, onTake, onSkip, busy }: Props) {
       return
     }
 
-    // The offer is now in `run.current_offer`; walk the reveal stages over it.
     timers.current.push(
       window.setTimeout(() => {
-        if (cycler.current) window.clearInterval(cycler.current)
         setStage('club-landed')
+        play('lock')
         timers.current.push(
           window.setTimeout(() => {
             setStage('players')
             timers.current.push(
               window.setTimeout(() => {
-                // Stop the reel *on* the drawn player so the landing is visible,
-                // rather than cutting straight to the card.
-                if (cycler.current) window.clearInterval(cycler.current)
                 setStage('player-landed')
-                timers.current.push(
-                  window.setTimeout(() => setStage('done'), t.playerHold),
-                )
+                play('reveal')
+                timers.current.push(window.setTimeout(() => setStage('done'), t.playerHold))
               }, t.playerReel),
             )
           }, t.clubHold),
@@ -144,12 +107,17 @@ export function Build({ run, meta, onSpin, onTake, onSkip, busy }: Props) {
     )
   }
 
-  // Once we know the club, the player reel must show that club's squad.
+  // Pulling something rare should feel like an event, not a list update.
   useEffect(() => {
-    if (stage === 'players' && offer) {
-      cycle(roster[offer.club_id] ?? [offer.name])
+    if (stage !== 'player-landed' || !offer) return
+    if (offer.tier <= 2) {
+      setBurst((n) => n + 1)
+      setFlash(offer.tier === 1 ? 'icon' : 'star')
+      play('fanfare')
+      const id = window.setTimeout(() => setFlash(null), 900)
+      return () => window.clearTimeout(id)
     }
-  }, [stage, offer, roster, cycle])
+  }, [stage, offer])
 
   const toggleFast = () => {
     const next = !fast
@@ -157,13 +125,26 @@ export function Build({ run, meta, onSpin, onTake, onSkip, busy }: Props) {
     localStorage.setItem(FAST_KEY, next ? '1' : '0')
   }
 
+  const toggleSound = () => {
+    const next = !sound
+    setSound(next)
+    setSoundEnabled(next)
+    if (next) play('lock')
+  }
+
+  const handleTake = (key: string) => {
+    play('lock')
+    return onTake(key)
+  }
+
   const skipsLeft = run.spins_total - run.spins_used - (run.criteria_total - run.slots_filled)
-  const offerClub = offer ? meta.display_clubs[offer.club_id] : undefined
-  const spinning =
-    stage === 'clubs' || stage === 'club-landed' || stage === 'players' || stage === 'player-landed'
+  const spinning = stage !== 'idle' && stage !== 'done'
 
   return (
     <div className="page">
+      {flash && <div className={`screen-flash flash-${flash}`} aria-hidden="true" />}
+      <Celebration trigger={burst} intensity={flash === 'icon' ? 'icon' : 'star'} />
+
       <Stepper phase={run.phase} />
 
       <div className="page-head">
@@ -203,39 +184,32 @@ export function Build({ run, meta, onSpin, onTake, onSkip, busy }: Props) {
 
             {spinning ? (
               <div className="spinner-stage">
-                <div className="reel-stages">
-                  <div className={`reel-step${stage === 'clubs' ? ' live' : ' done'}`}>
-                    <span className="reel-step-label">Club</span>
-                    <span className="reel-step-value">
-                      {stage === 'clubs' ? reelText : (offerClub?.name ?? '—')}
-                    </span>
-                  </div>
-                  <div
-                    className={`reel-step${
-                      stage === 'players'
-                        ? ' live'
-                        : stage === 'player-landed'
-                          ? ' landed'
-                          : stage === 'club-landed'
-                            ? ''
-                            : ' done'
-                    }`}
-                  >
-                    <span className="reel-step-label">Player</span>
-                    <span className="reel-step-value">
-                      {stage === 'players'
-                        ? reelText
-                        : stage === 'clubs' || stage === 'club-landed'
-                          ? '…'
-                          : (offer?.name ?? '')}
-                    </span>
-                  </div>
-                </div>
+                <SlotReel
+                  label="Club"
+                  items={clubNames}
+                  landsOn={offerClub?.name ?? null}
+                  state={stage === 'clubs' ? 'spinning' : 'landed'}
+                  durationMs={(fast ? TIMING.fast : TIMING.normal).clubReel}
+                  accent={offerClub?.primary}
+                />
+                <SlotReel
+                  label="Player"
+                  items={clubSquad}
+                  landsOn={offer?.name ?? null}
+                  state={
+                    stage === 'players'
+                      ? 'spinning'
+                      : stage === 'player-landed'
+                        ? 'landed'
+                        : 'idle'
+                  }
+                  durationMs={(fast ? TIMING.fast : TIMING.normal).playerReel}
+                  accent="#ffe27a"
+                />
 
-                {stage === 'club-landed' && offerClub && (
-                  <div className="club-landed" style={{ borderColor: offerClub.primary }}>
-                    <span className="club-dot lg" style={{ background: offerClub.primary }} />
-                    {offerClub.name}
+                {stage === 'player-landed' && offer && (
+                  <div className={`pull-banner tier-${offer.tier}`}>
+                    {offer.tier_name} · {offer.overall} OVR
                   </div>
                 )}
 
@@ -255,7 +229,7 @@ export function Build({ run, meta, onSpin, onTake, onSkip, busy }: Props) {
                   </div>
 
                   <div className="attr-list">
-                    {attributes.map((a) => {
+                    {attributes.map((a, i) => {
                       const locked = run.board[a.key] !== null
                       const raw = offer.ratings[a.key]
                       const display = counted[a.key] ?? raw
@@ -264,13 +238,14 @@ export function Build({ run, meta, onSpin, onTake, onSkip, busy }: Props) {
                         <button
                           key={a.key}
                           className={`attr-row${locked ? ' locked' : ''}`}
+                          style={{ animationDelay: `${i * 28}ms` }}
                           aria-label={
                             locked
                               ? `${a.label} already locked at ${run.board[a.key]}`
                               : `Take ${a.label} ${raw} from ${offer.name}`
                           }
                           disabled={locked || busy}
-                          onClick={() => onTake(a.key)}
+                          onClick={() => handleTake(a.key)}
                         >
                           <span className="attr-label">
                             {a.label}
@@ -303,7 +278,7 @@ export function Build({ run, meta, onSpin, onTake, onSkip, busy }: Props) {
               </div>
             ) : (
               <div className="spinner-stage">
-                <button className="btn btn-primary" onClick={handleSpin} disabled={busy}>
+                <button className="btn btn-primary btn-spin" onClick={handleSpin} disabled={busy}>
                   Spin for a player
                 </button>
                 <div className="hint" style={{ maxWidth: 400, textAlign: 'center' }}>
@@ -311,10 +286,16 @@ export function Build({ run, meta, onSpin, onTake, onSkip, busy }: Props) {
                   likelier as the run goes on — but an Icon is still the exception, so banking a
                   good attribute early is rarely wrong.
                 </div>
-                <label className="fast-toggle">
-                  <input type="checkbox" checked={fast} onChange={toggleFast} />
-                  Fast spins
-                </label>
+                <div className="toggle-row">
+                  <label className="fast-toggle">
+                    <input type="checkbox" checked={fast} onChange={toggleFast} />
+                    Fast spins
+                  </label>
+                  <label className="fast-toggle">
+                    <input type="checkbox" checked={sound} onChange={toggleSound} />
+                    Sound
+                  </label>
+                </div>
               </div>
             )}
           </div>
@@ -370,7 +351,9 @@ export function Build({ run, meta, onSpin, onTake, onSkip, busy }: Props) {
               })}
             </div>
             <div className="ovr-readout">
-              <span className="big">{run.overall}</span>
+              <span className="big" key={run.overall}>
+                {run.overall}
+              </span>
               <span className="lbl">
                 Overall so far
                 <br />
