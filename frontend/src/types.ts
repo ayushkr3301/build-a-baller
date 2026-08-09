@@ -1,5 +1,6 @@
 export type PositionKey = 'ST' | 'MID' | 'DEF' | 'GK'
-export type Phase = 'building' | 'built' | 'vetoed' | 'drafted' | 'complete'
+export type Phase = 'building' | 'built' | 'vetoed' | 'drafted' | 'career' | 'complete'
+export type Mode = 'season' | 'career' | 'daily'
 
 export interface AttributeMeta {
   key: string
@@ -53,6 +54,7 @@ export interface Meta {
   pool_sizes: Record<string, Record<string, number>>
   display_clubs: Record<string, DisplayClub>
   rosters: Rosters
+  nations: { id: string; name: string; strength: number }[]
   stats: { runs_completed: number; best_overall: number | null; best_player: string | null }
 }
 
@@ -240,6 +242,10 @@ export interface Run {
   club?: { id: string; name: string; short: string; primary: string; secondary: string }
   draft_odds: DraftOdd[] | null
   season: Season | null
+  mode: Mode
+  daily_date: string | null
+  career: CareerState | null
+  best_possible: BestPossible | null
 }
 
 export interface HallOfFameEntry {
@@ -258,4 +264,122 @@ export interface HallOfFameEntry {
   avg_rating: number
   completed_at: string
   awards: string[]
+}
+
+
+// --------------------------------------------------------------------------
+// Best possible card, daily challenge, career mode
+// --------------------------------------------------------------------------
+
+export interface BestPossible {
+  overall: number
+  regret: number
+  players_seen: number
+  picks: Record<string, { value: number; player: string }>
+}
+
+export interface DailyInfo {
+  date: string
+  seed: number
+  position: PositionKey
+  position_name: string
+  era: string
+  era_name: string
+  resets_in: number
+  already_played: boolean
+  attempt: { id: string; phase: string; overall: number | null; grade: string | null } | null
+  streak: number
+  days_played: number
+  leaderboard: {
+    player_name: string
+    overall: number
+    grade: string
+    goals: number
+    assists: number
+    clean_sheets: number
+    avg_rating: number
+    club_name: string | null
+    league_pos: number
+  }[]
+}
+
+export interface CareerOption {
+  id: string
+  title: string
+  detail: string
+  club_id: string | null
+  club: string | null
+  tag: string
+}
+
+export interface CareerSeason {
+  year: number
+  age: number
+  club: string
+  on_loan: boolean
+  decision: string
+  league_position: number
+  apps: number
+  minutes: number
+  goals: number
+  assists: number
+  clean_sheets: number
+  avg_rating: number
+  grade: string
+  overall_before: number
+  overall_after: number
+  trophies: string[]
+  ballon_dor_rank: number
+  europe: { competition: string; reached: string; won: boolean; goals: number; assists: number } | null
+  international: {
+    nation: string
+    caps: number
+    goals: number
+    tournament: { name: string; reached: string; won: boolean } | null
+  } | null
+}
+
+export interface CareerSummary {
+  totals: {
+    apps: number; goals: number; assists: number; clean_sheets: number
+    minutes: number; seasons: number; avg_rating: number; europe_goals: number
+  }
+  honours: { trophy: string; count: number }[]
+  clubs: { club: string; years: number }[]
+  longest_club: string
+  longest_years: number
+  peak_overall: number
+  potential: number
+  reached_potential: boolean
+  caps: number
+  international_goals: number
+  tournaments_won: string[]
+  ballon_dor_wins: number
+  ballon_dor_podiums: number
+  ballon_dor: { year: number; rank: number }[]
+  earnings: number
+  retired_at: number
+  title: string
+  verdict: string
+  retrained: string[]
+}
+
+export interface CareerState {
+  started: boolean
+  age: number
+  year: number
+  overall: number
+  potential: number
+  position: PositionKey
+  club: string
+  club_id: string
+  nationality: string
+  caps: number
+  international_goals: number
+  retired: boolean
+  seasons: CareerSeason[]
+  honours: { year: number; trophy: string; club: string }[]
+  ballon_dor: { year: number; rank: number }[]
+  options: CareerOption[]
+  summary: CareerSummary | null
 }

@@ -330,7 +330,14 @@ def simulate_season(
     club_id: str,
     player_name: str,
     seed: int,
+    opportunity: float = 1.0,
 ) -> SeasonResult:
+    """Play a full season.
+
+    `opportunity` scales how often the player starts, which is how career mode
+    expresses the difference between a loan for minutes and a big-money move to
+    a bench role. 1.0 is the ordinary case.
+    """
     rng = random.Random(seed)
     my_club = CLUB_BY_ID[club_id]
 
@@ -387,7 +394,10 @@ def simulate_season(
                 pm.status = "suspended"
                 suspended_for -= 1
             else:
-                _play_match(pm, position, overall, ratings, g_share, a_share, yellow_rate, rng)
+                _play_match(
+                    pm, position, overall, ratings, g_share, a_share, yellow_rate, rng,
+                    opportunity,
+                )
                 if pm.yellow:
                     yellows_total += 1
                     if yellows_total % 5 == 0:
@@ -480,9 +490,12 @@ def _play_match(
     a_share: float,
     yellow_rate: float,
     rng: random.Random,
+    opportunity: float = 1.0,
 ) -> None:
-    # Better players start more often.
-    start_chance = 0.72 + min(0.26, max(0.0, (overall - 68) / 100))
+    # Better players start more often; opportunity is career mode's thumb on the
+    # scale for loans, bench roles and being a teenager at a huge club.
+    start_chance = (0.72 + min(0.26, max(0.0, (overall - 68) / 100))) * opportunity
+    start_chance = max(0.04, min(0.98, start_chance))
     if rng.random() > start_chance:
         pm.status = "bench"
         pm.minutes = rng.choice([0, 0, 8, 15, 22, 30])

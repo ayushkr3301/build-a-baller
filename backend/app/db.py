@@ -105,6 +105,9 @@ CREATE TABLE IF NOT EXISTS runs (
     avg_rating    {REAL},
     club_name     TEXT,
     awards        TEXT,
+    mode          TEXT,
+    daily_date    TEXT,
+    player_token  TEXT,
     state         TEXT NOT NULL,
     season        TEXT
 );
@@ -116,12 +119,18 @@ CREATE INDEX IF NOT EXISTS idx_runs_completed ON runs(completed_at DESC);
 # season JSON, which is ~20KB a row -- reading fifty of those to pull two short
 # strings meant a megabyte off the wire per request. They're written out to their
 # own columns at save time instead, so the listing never touches the blob.
-DENORMALISED_COLUMNS = (("club_name", "TEXT"), ("awards", "TEXT"))
+DENORMALISED_COLUMNS = (
+    ("club_name", "TEXT"),
+    ("awards", "TEXT"),
+    ("mode", "TEXT"),
+    ("daily_date", "TEXT"),
+    ("player_token", "TEXT"),
+)
 
 # Columns the hall of fame actually reads. Never SELECT *, or `season` comes too.
 HOF_COLUMNS = (
     "id, player_name, position, era, overall, club_id, club_name, grade, goals,"
-    " assists, clean_sheets, league_pos, avg_rating, completed_at, awards"
+    " assists, clean_sheets, league_pos, avg_rating, completed_at, awards, mode"
 )
 
 
@@ -285,15 +294,68 @@ def now() -> str:
 # --------------------------------------------------------------------------- #
 
 
-def create_run(run_id: str, player_name: str, position: str, era: str, state: dict) -> None:
+def create_run(
+    run_id: str,
+    player_name: str,
+    position: str,
+    era: str,
+    state: dict,
+    mode: str = "season",
+    daily_date: str | None = None,
+    player_token: str | None = None,
+) -> None:
     with cursor() as cur:
         cur.execute(
             _sql(
-                "INSERT INTO runs (id, created_at, player_name, position, era, phase, state)"
-                " VALUES (?,?,?,?,?,?,?)"
+                "INSERT INTO runs (id, created_at, player_name, position, era, phase, state,"
+                " mode, daily_date, player_token) VALUES (?,?,?,?,?,?,?,?,?,?)"
             ),
-            (run_id, now(), player_name, position, era, state["phase"], json.dumps(state)),
+            (
+                run_id, now(), player_name, position, era, state["phase"],
+                json.dumps(state), mode, daily_date, player_token,
+            ),
         )
+
+
+def daily_attempt(day: str, player_token: str) -> dict | None:
+    """The run this token already started today, if any."""
+    with cursor() as cur:
+        cur.execute(
+            _sql(
+                "SELECT id, phase, overall, grade FROM runs"
+                " WHERE daily_date = ? AND player_token = ? ORDER BY created_at LIMIT 1"
+            ),
+            (day, player_token),
+        )
+        return _row_to_dict(cur.fetchone())
+
+
+def daily_leaderboard(day: str, limit: int = 25) -> list[dict]:
+    with cursor() as cur:
+        cur.execute(
+            _sql(
+                "SELECT player_name, overall, grade, goals, assists, clean_sheets,"
+                " avg_rating, club_name, league_pos FROM runs"
+                " WHERE daily_date = ? AND completed_at IS NOT NULL"
+                " ORDER BY overall DESC, avg_rating DESC LIMIT ?"
+            ),
+            (day, limit),
+        )
+        return [dict(r) for r in cur.fetchall()]
+
+
+def daily_history(player_token: str, limit: int = 400) -> list[str]:
+    """Dates this token has completed, newest first -- used for the streak."""
+    with cursor() as cur:
+        cur.execute(
+            _sql(
+                "SELECT DISTINCT daily_date FROM runs WHERE player_token = ?"
+                " AND completed_at IS NOT NULL AND daily_date IS NOT NULL"
+                " ORDER BY daily_date DESC LIMIT ?"
+            ),
+            (player_token, limit),
+        )
+        return [dict(r)["daily_date"] for r in cur.fetchall()]
 
 
 def save_state(

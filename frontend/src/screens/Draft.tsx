@@ -198,6 +198,47 @@ export function Draft({ run, meta, onVeto, onDraft, onSimulate, busy }: Props) {
             </div>
           </div>
 
+          {run.best_possible && run.best_possible.regret > 0 && (
+            <div className="panel regret-panel">
+              <div className="panel-head">
+                <h3>What you could have had</h3>
+                <span>from the same {run.best_possible.players_seen} players</span>
+              </div>
+              <div className="regret-headline">
+                <div>
+                  <span className="regret-value">{run.overall}</span>
+                  <span className="regret-label">you built</span>
+                </div>
+                <span className="regret-arrow">vs</span>
+                <div>
+                  <span className="regret-value best">{run.best_possible.overall}</span>
+                  <span className="regret-label">perfect play</span>
+                </div>
+              </div>
+              <p className="hint">
+                You left <b>{run.best_possible.regret} OVR</b> on the table. Taking the biggest
+                number each spin isn't the same as the best card — a 95 in a slot worth 3% costs
+                you the slot worth 15%.
+              </p>
+              <div className="regret-list">
+                {attributes.map((a) => {
+                  const mine = run.board[a.key]
+                  const best = run.best_possible!.picks[a.key]
+                  if (!best || mine === best.value) return null
+                  return (
+                    <div className="regret-row" key={a.key}>
+                      <span>{a.label}</span>
+                      <span className="regret-swap">
+                        <b>{mine ?? '—'}</b> → <b className="best">{best.value}</b>
+                        <small>{best.player}</small>
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
           <div className="panel">
             <div className="panel-head">
               <h3>Veto three clubs</h3>

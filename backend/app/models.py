@@ -7,10 +7,25 @@ from pydantic import BaseModel, Field, field_validator
 from .data.attributes import ERAS, POSITIONS
 
 
+MODES = {"season", "career", "daily"}
+
+
 class CreateRun(BaseModel):
     player_name: str = Field(default="Your Player", max_length=28)
     position: str
     era: str
+    mode: str = "season"
+    # Anonymous, browser-generated. Enough to stop an accidental second daily
+    # attempt; nowhere near enough to stop a determined one, which is the price
+    # of not having accounts.
+    player_token: str | None = Field(default=None, max_length=64)
+
+    @field_validator("mode")
+    @classmethod
+    def _mode(cls, v: str) -> str:
+        if v not in MODES:
+            raise ValueError(f"mode must be one of {sorted(MODES)}")
+        return v
 
     @field_validator("position")
     @classmethod
@@ -39,3 +54,11 @@ class TakeAttribute(BaseModel):
 
 class VetoClubs(BaseModel):
     club_ids: list[str]
+
+
+class StartCareer(BaseModel):
+    nationality: str
+
+
+class CareerChoice(BaseModel):
+    option_id: str

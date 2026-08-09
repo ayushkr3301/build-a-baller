@@ -218,6 +218,80 @@ class Board:
         return overall_from(self.position, {k: v for k, v in self.slots.items() if v is not None})
 
 
+def players_by_ids(era: str, position: str, ids: list[str]) -> list[Player]:
+    """Rebuild the players a run was offered, in the order they were drawn."""
+    index = {p.id: p for p in get_pool(era, position)}
+    return [index[i] for i in ids if i in index]
+
+
+def best_possible_board(position: str, players: list[Player]) -> tuple[int, dict[str, dict]]:
+    """The best card that could have been built from the players actually drawn.
+
+    This is an assignment problem -- each player may donate exactly one attribute,
+    each slot takes exactly one player -- so a greedy pass over the biggest numbers
+    gets it wrong: taking a 95 Pace off a player whose 92 Finishing is the only 90+
+    Finishing you were ever offered can cost more than it gains.
+
+    Solved exactly with a DP over subsets of slots. Twelve slots means 4096 states,
+    and unreachable states are pruned, so the true optimum is cheap.
+    """
+    keys = attr_keys(position)
+    weights = [a.weight for a in ATTRIBUTES[position]]
+    n = len(keys)
+    size = 1 << n
+
+    best = [-1.0] * size
+    best[0] = 0.0
+
+    # One back-pointer layer per player. Sharing a single array across layers
+    # looks like it works and silently lets the reconstruction walk into a later
+    # player's decision, producing a board where one player donates several
+    # attributes. Each layer records only how *this* player reached a state:
+    # None means the state was carried over untouched.
+    layers: list[list[tuple[int, int] | None]] = []
+
+    for player in players:
+        values = [weights[s] * player.ratings[keys[s]] for s in range(n)]
+        nxt = best[:]  # carry the previous layer forward = "skip this player"
+        step: list[tuple[int, int] | None] = [None] * size
+        for mask in range(size):
+            score = best[mask]
+            if score < 0:
+                continue
+            for s in range(n):
+                bit = 1 << s
+                if mask & bit:
+                    continue
+                candidate = score + values[s]
+                target = mask | bit
+                if candidate > nxt[target]:
+                    nxt[target] = candidate
+                    step[target] = (mask, s)
+        layers.append(step)
+        best = nxt
+
+    # Every slot filled if there were enough players; otherwise the fullest board.
+    final = max(range(size), key=lambda m: (best[m], bin(m).count("1")))
+    if best[(1 << n) - 1] >= 0:
+        final = (1 << n) - 1
+
+    chosen: dict[str, dict] = {}
+    mask = final
+    for index in range(len(players) - 1, -1, -1):
+        move = layers[index][mask]
+        if move is None:
+            continue  # this player wasn't the one that filled a slot here
+        previous, slot = move
+        chosen[keys[slot]] = {
+            "value": players[index].ratings[keys[slot]],
+            "player": players[index].name,
+        }
+        mask = previous
+
+    ratings = {key: entry["value"] for key, entry in chosen.items()}
+    return overall_from(position, ratings), chosen
+
+
 def projected_overall(board: Board) -> int:
     """Overall if every remaining slot came in at the league-average value (~72)."""
     filled = {k: v for k, v in board.slots.items() if v is not None}

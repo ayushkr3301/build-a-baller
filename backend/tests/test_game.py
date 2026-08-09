@@ -8,6 +8,7 @@ from app.data.players_legends import POOLS as LEGEND_ROWS
 from app.game import (
     Board,
     POOLS,
+    best_possible_board,
     draft_odds,
     draft_strength,
     draw_player,
@@ -141,6 +142,61 @@ def test_draft_is_graded_on_a_curve_within_each_era():
     # Without the curve, every legend build would be drafted to a giant.
     assert top_chance(87, "legends") < top_chance(87, "current")
     assert top_chance(92, "legends") > top_chance(83, "legends")
+
+
+def _draw_run(era: str, position: str, seed: int):
+    rng = random.Random(seed)
+    seen: set[str] = set()
+    players = []
+    for i in range(N_SPINS):
+        p = draw_player(era, position, i, rng, seen)
+        seen.add(p.id)
+        players.append(p)
+    return players
+
+
+@pytest.mark.parametrize("seed", range(8))
+def test_best_possible_board_is_a_valid_assignment(seed):
+    players = _draw_run("legends", "ST", seed)
+    best, picks = best_possible_board("ST", players)
+
+    assert set(picks) == set(attr_keys("ST")), "every slot should be filled"
+    used = [entry["player"] for entry in picks.values()]
+    assert len(used) == len(set(used)), "a player can only donate one attribute"
+    for key, entry in picks.items():
+        source = next(p for p in players if p.name == entry["player"])
+        assert source.ratings[key] == entry["value"], "value must come from that player"
+    assert best == overall_from("ST", {k: v["value"] for k, v in picks.items()})
+
+
+@pytest.mark.parametrize("seed", range(5))
+def test_best_possible_board_beats_greedy_and_random_play(seed):
+    """Randomised search shouldn't find anything better than the claimed optimum."""
+    players = _draw_run("legends", "ST", seed)
+    best, _ = best_possible_board("ST", players)
+    keys = attr_keys("ST")
+
+    board = Board(position="ST")
+    for p in players:
+        open_slots = board.open_slots()
+        if not open_slots:
+            break
+        board.take(max(open_slots, key=lambda k: p.ratings[k]), p)
+    assert best >= board.overall, "the optimum cannot be worse than playing greedily"
+
+    rng = random.Random(seed)
+    for _ in range(4000):
+        order = rng.sample(range(len(players)), len(keys))
+        ratings = {keys[s]: players[order[s]].ratings[keys[s]] for s in range(len(keys))}
+        assert overall_from("ST", ratings) <= best, "found an assignment better than the optimum"
+
+
+def test_best_possible_board_handles_a_short_run():
+    """Skipping twice means fewer players than slots; it should still solve."""
+    players = _draw_run("current", "GK", 1)[:4]
+    best, picks = best_possible_board("GK", players)
+    assert 0 < len(picks) <= 4
+    assert best > 0
 
 
 def test_draft_odds_are_a_distribution_and_respect_vetoes():

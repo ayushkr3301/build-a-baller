@@ -1,4 +1,4 @@
-import type { HallOfFameEntry, Meta, Run } from './types'
+import type { DailyInfo, HallOfFameEntry, Meta, Run } from './types'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`/api${path}`, {
@@ -18,11 +18,40 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>
 }
 
+/** A stable anonymous id so the daily challenge can tell players apart. */
+const TOKEN_KEY = 'bab.playerToken'
+
+export function playerToken(): string {
+  let token = localStorage.getItem(TOKEN_KEY)
+  if (!token) {
+    token = crypto.randomUUID()
+    localStorage.setItem(TOKEN_KEY, token)
+  }
+  return token
+}
+
 export const api = {
   meta: () => request<Meta>('/meta'),
 
-  createRun: (player_name: string, position: string, era: string) =>
-    request<Run>('/runs', { method: 'POST', body: JSON.stringify({ player_name, position, era }) }),
+  daily: () => request<DailyInfo>(`/daily?player_token=${encodeURIComponent(playerToken())}`),
+
+  createRun: (player_name: string, position: string, era: string, mode = 'season') =>
+    request<Run>('/runs', {
+      method: 'POST',
+      body: JSON.stringify({ player_name, position, era, mode, player_token: playerToken() }),
+    }),
+
+  startCareer: (id: string, nationality: string) =>
+    request<Run>(`/runs/${id}/career/start`, {
+      method: 'POST',
+      body: JSON.stringify({ nationality }),
+    }),
+
+  advanceCareer: (id: string, option_id: string) =>
+    request<Run>(`/runs/${id}/career/advance`, {
+      method: 'POST',
+      body: JSON.stringify({ option_id }),
+    }),
 
   getRun: (id: string) => request<Run>(`/runs/${id}`),
 

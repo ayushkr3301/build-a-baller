@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from 'react'
 
 import { api } from './api'
 import { Build } from './screens/Build'
+import { Career } from './screens/Career'
+import { Daily } from './screens/Daily'
 import { Draft } from './screens/Draft'
 import { HallOfFame } from './screens/HallOfFame'
 import { Home } from './screens/Home'
@@ -10,7 +12,7 @@ import type { Meta, Run } from './types'
 
 const RUN_KEY = 'bab.runId'
 
-type View = 'game' | 'hof'
+type View = 'game' | 'hof' | 'daily'
 
 export default function App() {
   const [meta, setMeta] = useState<Meta | null>(null)
@@ -64,9 +66,25 @@ export default function App() {
     }
   }, [])
 
-  const start = async (name: string, position: string, era: string) => {
+  const start = async (
+    name: string,
+    position: string,
+    era: string,
+    mode: 'season' | 'career' = 'season',
+  ) => {
     setView('game')
-    await act(() => api.createRun(name || 'Your Player', position, era)).catch(() => {})
+    await act(() => api.createRun(name || 'Your Player', position, era, mode)).catch(() => {})
+  }
+
+  const startDaily = async (name: string) => {
+    setView('game')
+    // Position and era are dictated by the date; the server ignores what we send.
+    await act(() => api.createRun(name || 'Your Player', 'ST', 'current', 'daily')).catch(() => {})
+  }
+
+  const resumeRun = async (runId: string) => {
+    setView('game')
+    await act(() => api.getRun(runId)).catch(() => {})
   }
 
   const restart = () => {
@@ -99,7 +117,9 @@ export default function App() {
 
   const body = () => {
     if (view === 'hof') return <HallOfFame onBack={() => setView('game')} />
-    if (!run) return <Home meta={meta} onStart={start} busy={busy} />
+    if (view === 'daily') return <Daily onPlay={startDaily} onResume={resumeRun} busy={busy} />
+    if (!run)
+      return <Home meta={meta} onStart={start} onDaily={() => setView('daily')} busy={busy} />
 
     switch (run.phase) {
       case 'building':
@@ -113,9 +133,30 @@ export default function App() {
             onSkip={() => act(() => api.skip(run.id)).then(() => {})}
           />
         )
+      case 'career':
+        return (
+          <Career
+            run={run}
+            meta={meta}
+            busy={busy}
+            onStart={(nat) => act(() => api.startCareer(run.id, nat)).then(() => {})}
+            onChoose={(id) => act(() => api.advanceCareer(run.id, id)).then(() => {})}
+            onRestart={restart}
+          />
+        )
       case 'built':
-      case 'vetoed':
-      case 'drafted':
+        if (run.mode === 'career') {
+          return (
+            <Career
+              run={run}
+              meta={meta}
+              busy={busy}
+              onStart={(nat) => act(() => api.startCareer(run.id, nat)).then(() => {})}
+              onChoose={(id) => act(() => api.advanceCareer(run.id, id)).then(() => {})}
+              onRestart={restart}
+            />
+          )
+        }
         return (
           <Draft
             run={run}
@@ -127,6 +168,18 @@ export default function App() {
           />
         )
       case 'complete':
+        if (run.mode === 'career') {
+          return (
+            <Career
+              run={run}
+              meta={meta}
+              busy={busy}
+              onStart={(nat) => act(() => api.startCareer(run.id, nat)).then(() => {})}
+              onChoose={(id) => act(() => api.advanceCareer(run.id, id)).then(() => {})}
+              onRestart={restart}
+            />
+          )
+        }
         return (
           <SeasonReport
             run={run}
@@ -136,7 +189,7 @@ export default function App() {
           />
         )
       default:
-        return <Home meta={meta} onStart={start} busy={busy} />
+        return <Home meta={meta} onStart={start} onDaily={() => setView('daily')} busy={busy} />
     }
   }
 
@@ -160,6 +213,12 @@ export default function App() {
             Abandon run
           </button>
         )}
+        <button
+          className={`nav-btn${view === 'daily' ? ' active' : ''}`}
+          onClick={() => setView(view === 'daily' ? 'game' : 'daily')}
+        >
+          Daily
+        </button>
         <button
           className={`nav-btn${view === 'hof' ? ' active' : ''}`}
           onClick={() => setView(view === 'hof' ? 'game' : 'hof')}

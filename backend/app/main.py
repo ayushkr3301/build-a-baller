@@ -22,10 +22,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from . import career as career_mode
+from . import daily as daily_mode
 from . import db, game
 from .data.attributes import ERAS, N_CRITERIA, N_SPINS, POSITIONS, TIERS, attr_keys
 from .data.clubs import CLUBS, CLUB_BY_ID, DISPLAY_CLUB_BY_ID
-from .models import CreateRun, TakeAttribute, VetoClubs
+from .data.world import NATIONS, NATION_BY_ID
+from .models import CareerChoice, CreateRun, StartCareer, TakeAttribute, VetoClubs
 from .sim import simulate_season
 
 # Bumped when the deployment surface changes, so /api/health proves which
@@ -110,8 +113,12 @@ def _public(row, state: dict) -> dict:
         "card": dict(zip(("card_key", "card_label"), game.card_grade(board.overall))),
         "vetoed": state.get("vetoed", []),
         "club_id": state.get("club_id"),
+        "mode": state.get("mode", "season"),
+        "daily_date": state.get("daily_date"),
         "draft_odds": None,
         "season": json.loads(row["season"]) if row["season"] else None,
+        "career": _career_payload(state),
+        "best_possible": _best_possible(state),
     }
     if state["phase"] in ("built", "vetoed"):
         payload["draft_odds"] = [
@@ -135,6 +142,52 @@ def _public(row, state: dict) -> dict:
             "secondary": club.secondary,
         }
     return payload
+
+
+def _best_possible(state: dict) -> dict | None:
+    """The best card the players actually drawn could have produced.
+
+    Only once the build is over -- shown mid-run it would just be a solver telling
+    you what to click.
+    """
+    if state["phase"] == "building":
+        return None
+    players = game.players_by_ids(state["era"], state["position"], state.get("seen_ids", []))
+    if not players:
+        return None
+    overall, picks = game.best_possible_board(state["position"], players)
+    board = _board(state)
+    return {
+        "overall": overall,
+        "regret": max(0, overall - board.overall),
+        "picks": picks,
+        "players_seen": len(players),
+    }
+
+
+def _career_payload(state: dict) -> dict | None:
+    data = state.get("career")
+    if not data:
+        return None
+    return {
+        "started": True,
+        "age": data["age"],
+        "year": data["year"],
+        "overall": data["overall"],
+        "potential": data["potential"],
+        "position": data["position"],
+        "club": CLUB_BY_ID[data["club_id"]].name if data["club_id"] in CLUB_BY_ID else data["club_id"],
+        "club_id": data["club_id"],
+        "nationality": NATION_BY_ID[data["nationality"]].name,
+        "caps": data["caps"],
+        "international_goals": data["international_goals"],
+        "retired": data["retired"],
+        "seasons": data["seasons"],
+        "honours": data["honours"],
+        "ballon_dor": data["ballon_dor"],
+        "options": state.get("career_options", []),
+        "summary": career_mode.career_summary(data) if data["retired"] else None,
+    }
 
 
 # --------------------------------------------------------------------------- #
@@ -314,7 +367,27 @@ def _static_meta() -> dict:
 
 @app.get("/api/meta")
 def meta() -> dict:
-    return {**_static_meta(), "stats": db.stats()}
+    return {
+        **_static_meta(),
+        "stats": db.stats(),
+        "nations": [{"id": n.id, "name": n.name, "strength": n.strength} for n in NATIONS],
+    }
+
+
+@app.get("/api/daily")
+def daily(player_token: str | None = None) -> dict:
+    """Today's challenge, whether this token has played it, and the board."""
+    setup = daily_mode.config()
+    attempt = db.daily_attempt(setup["date"], player_token) if player_token else None
+    history = db.daily_history(player_token) if player_token else []
+    return {
+        **setup,
+        "already_played": attempt is not None,
+        "attempt": attempt,
+        "streak": daily_mode.streak_from_dates(history),
+        "days_played": len(history),
+        "leaderboard": db.daily_leaderboard(setup["date"]),
+    }
 
 
 # --------------------------------------------------------------------------- #
@@ -325,22 +398,43 @@ def meta() -> dict:
 @app.post("/api/runs")
 def create_run(body: CreateRun) -> dict:
     run_id = secrets.token_urlsafe(9)
+
+    position, era, seed = body.position, body.era, secrets.randbelow(2**31)
+    daily_date = None
+    if body.mode == "daily":
+        setup = daily_mode.config()
+        # The whole point is that everyone faces identical spins, so the client
+        # does not get to choose any of this.
+        position, era, seed = setup["position"], setup["era"], setup["seed"]
+        daily_date = setup["date"]
+        if not body.player_token:
+            raise HTTPException(400, "the daily challenge needs a player token")
+        if db.daily_attempt(daily_date, body.player_token):
+            raise HTTPException(409, "you have already played today's challenge")
+
     state = {
         "player_name": body.player_name,
-        "position": body.position,
-        "era": body.era,
-        "seed": secrets.randbelow(2**31),
+        "position": position,
+        "era": era,
+        "mode": body.mode,
+        "daily_date": daily_date,
+        "seed": seed,
         "phase": "building",
         "spin_index": 0,
         "current_offer": None,
-        "board": {k: None for k in attr_keys(body.position)},
+        # `position`, not `body.position`: a daily run overrides what was asked
+        # for, and a board keyed to the wrong position desynchronises the whole run.
+        "board": {k: None for k in attr_keys(position)},
         "sources": {},
         "seen_ids": [],
         "history": [],
         "vetoed": [],
         "club_id": None,
     }
-    db.create_run(run_id, body.player_name, body.position, body.era, state)
+    db.create_run(
+        run_id, body.player_name, position, era, state,
+        mode=body.mode, daily_date=daily_date, player_token=body.player_token,
+    )
     row = db.get_run(run_id)
     return _public(row, state)
 
@@ -511,6 +605,86 @@ def simulate(run_id: str) -> dict:
     state["phase"] = "complete"
     db.save_season(run_id, state, season)
     return _public(db.get_run(run_id), state)
+
+
+# --------------------------------------------------------------------------- #
+# Career mode
+# --------------------------------------------------------------------------- #
+
+
+@app.post("/api/runs/{run_id}/career/start")
+def career_start(run_id: str, body: StartCareer) -> dict:
+    """Turn a finished card into a potential, and begin at eighteen."""
+    row, state = _load(run_id)
+    _require_phase(state, "built")
+    if body.nationality not in NATION_BY_ID:
+        raise HTTPException(400, "unknown nationality")
+
+    board = _board(state)
+    ratings = {k: (v if v is not None else 0) for k, v in board.slots.items()}
+    data = career_mode.new_career(
+        name=state["player_name"],
+        position=state["position"],
+        era=state["era"],
+        nationality=body.nationality,
+        potential_ratings=ratings,
+        seed=state["seed"],
+    )
+    rng = random.Random(f"{state['seed']}:career:0")
+    state["career"] = data
+    state["career_options"] = career_mode.decision_options(data, rng)
+    state["phase"] = "career"
+    db.save_state(run_id, state, overall=board.overall, club_id=data["club_id"])
+    return _public(db.get_run(run_id), state)
+
+
+@app.post("/api/runs/{run_id}/career/advance")
+def career_advance(run_id: str, body: CareerChoice) -> dict:
+    """Take the summer decision, play the season, present the next one."""
+    row, state = _load(run_id)
+    _require_phase(state, "career")
+    data = state.get("career")
+    if not data or data["retired"]:
+        raise HTTPException(409, "this career is over")
+
+    year_index = len(data["seasons"])
+    rng = random.Random(f"{state['seed']}:career:{year_index}")
+    career_mode.play_year(data, body.option_id, rng)
+
+    if data["retired"]:
+        state["career_options"] = []
+        state["phase"] = "complete"
+        summary = career_mode.career_summary(data)
+        season_like = _career_as_season(data, summary)
+        db.save_season(run_id, state, season_like)
+    else:
+        state["career_options"] = career_mode.decision_options(data, rng)
+        db.save_state(run_id, state, club_id=data["club_id"])
+    return _public(db.get_run(run_id), state)
+
+
+def _career_as_season(data: dict, summary: dict) -> dict:
+    """Shape a finished career so it can share the hall-of-fame row format."""
+    return {
+        "career": True,
+        "grade": summary["title"],
+        "verdict": summary["verdict"],
+        "summary": summary,
+        "seasons": data["seasons"],
+        "player": {
+            "total_goals": summary["totals"]["goals"],
+            "total_assists": summary["totals"]["assists"],
+            "clean_sheets": summary["totals"]["clean_sheets"],
+            "avg_rating": summary["totals"]["avg_rating"],
+        },
+        "club": {
+            "name": summary["longest_club"],
+            "position": data["seasons"][-1]["league_position"] if data["seasons"] else 0,
+        },
+        "awards": [
+            {"title": h["trophy"], "you_won": True} for h in data["honours"]
+        ],
+    }
 
 
 # --------------------------------------------------------------------------- #

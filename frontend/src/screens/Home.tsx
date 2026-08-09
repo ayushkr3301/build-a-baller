@@ -4,14 +4,32 @@ import type { Meta } from '../types'
 
 interface Props {
   meta: Meta
-  onStart: (name: string, position: string, era: string) => void
+  onStart: (name: string, position: string, era: string, mode: 'season' | 'career') => void
+  onDaily: () => void
   busy: boolean
 }
 
-export function Home({ meta, onStart, busy }: Props) {
+const MODES = [
+  {
+    key: 'season' as const,
+    icon: '\u26bd',
+    name: 'One Season',
+    blurb: 'Build a card, get drafted, play a single season. About two minutes.',
+  },
+  {
+    key: 'career' as const,
+    icon: '\ud83d\udcc8',
+    name: 'Career',
+    blurb:
+      'Your card becomes a potential. Start at eighteen and play to retirement, one decision a summer.',
+  },
+]
+
+export function Home({ meta, onStart, onDaily, busy }: Props) {
   const [name, setName] = useState('')
   const [position, setPosition] = useState<string | null>(null)
   const [era, setEra] = useState<string | null>(null)
+  const [mode, setMode] = useState<'season' | 'career'>('season')
 
   const ready = Boolean(position && era)
 
@@ -47,7 +65,46 @@ export function Home({ meta, onStart, busy }: Props) {
 
       <div className="section">
         <div className="section-title">
-          <h3>1. Pick your position</h3>
+          <h3>Daily challenge</h3>
+          <span>Same spins for everyone, one attempt</span>
+        </div>
+        <button className="daily-banner" onClick={onDaily}>
+          <span className="daily-banner-icon">{'\u{1F525}'}</span>
+          <span>
+            <b>Today's challenge is live</b>
+            <small>
+              Everyone in the world gets the same thirteen players. One attempt, one leaderboard.
+            </small>
+          </span>
+          <span className="daily-banner-go">Play →</span>
+        </button>
+      </div>
+
+      <div className="section">
+        <div className="section-title">
+          <h3>1. Pick a mode</h3>
+          <span>Or take the daily above</span>
+        </div>
+        <div className="choice-grid">
+          {MODES.map((m) => (
+            <button
+              key={m.key}
+              className={`choice-card${mode === m.key ? ' selected' : ''}`}
+              aria-label={`Play ${m.name} mode`}
+              aria-pressed={mode === m.key}
+              onClick={() => setMode(m.key)}
+            >
+              <span className="choice-icon">{m.icon}</span>
+              <h4>{m.name}</h4>
+              <p>{m.blurb}</p>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="section">
+        <div className="section-title">
+          <h3>2. Pick your position</h3>
           <span>Each position has its own {meta.criteria} criteria</span>
         </div>
         <div className="choice-grid">
@@ -77,7 +134,7 @@ export function Home({ meta, onStart, busy }: Props) {
 
       <div className="section">
         <div className="section-title">
-          <h3>2. Pick your era</h3>
+          <h3>3. Pick your era</h3>
           <span>Who shows up on the reel</span>
         </div>
         <div className="choice-grid">
@@ -111,7 +168,7 @@ export function Home({ meta, onStart, busy }: Props) {
 
       <div className="section">
         <div className="section-title">
-          <h3>3. Name your player</h3>
+          <h3>4. Name your player</h3>
           <span>Optional — we'll call them "Your Player" otherwise</span>
         </div>
         <div className="name-row">
@@ -122,15 +179,15 @@ export function Home({ meta, onStart, busy }: Props) {
             maxLength={28}
             onChange={(e) => setName(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && ready && !busy) onStart(name, position!, era!)
+              if (e.key === 'Enter' && ready && !busy) onStart(name, position!, era!, mode)
             }}
           />
           <button
             className="btn btn-primary"
             disabled={!ready || busy}
-            onClick={() => onStart(name, position!, era!)}
+            onClick={() => onStart(name, position!, era!, mode)}
           >
-            {busy ? 'Starting…' : 'Start Building →'}
+            {busy ? 'Starting…' : mode === 'career' ? 'Start a career →' : 'Start Building →'}
           </button>
         </div>
         {!ready && (
