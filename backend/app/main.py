@@ -13,9 +13,9 @@ import random
 import secrets
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import db, game
@@ -136,6 +136,27 @@ def _public(row, state: dict) -> dict:
 # --------------------------------------------------------------------------- #
 # Metadata
 # --------------------------------------------------------------------------- #
+
+
+@app.exception_handler(404)
+async def _not_found(request: Request, _exc) -> JSONResponse:
+    """A 404 that says which path actually arrived.
+
+    Platform routing can rewrite a request before the app sees it, and the default
+    "Not Found" gives you no way to tell that from a genuinely missing route.
+    """
+    return JSONResponse(
+        status_code=404,
+        content={
+            "detail": "Not Found",
+            "received_path": request.url.path,
+            "build": BUILD,
+            "hint": (
+                "If this is not the path you requested, the platform rewrote it "
+                "before the application saw it."
+            ),
+        },
+    )
 
 
 @app.get("/api/health")
