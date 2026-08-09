@@ -10,8 +10,11 @@ from __future__ import annotations
 import json
 import os
 import random
+import re
 import secrets
+import time
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -136,6 +139,85 @@ def _public(row, state: dict) -> dict:
 # --------------------------------------------------------------------------- #
 # Metadata
 # --------------------------------------------------------------------------- #
+
+
+# A connection string can appear inside a driver's error text, so anything echoed
+# back to a caller goes through this first.
+_CREDENTIALS = re.compile(r"(?<=://)([^:/@\s]+):([^@\s]+)(?=@)")
+
+
+def _redact(text: str) -> str:
+    return _CREDENTIALS.sub(r"\1:***", text)
+
+
+@app.exception_handler(Exception)
+async def _unhandled(request: Request, exc: Exception) -> JSONResponse:
+    """Report unhandled errors instead of a bare "Internal Server Error".
+
+    Serverless tracebacks live only in dashboard logs, which deployment
+    protection can put out of reach. The message is redacted before it leaves.
+    """
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": "Unhandled server error",
+            "path": request.url.path,
+            "error_type": type(exc).__name__,
+            "error": _redact(str(exc))[:600],
+            "build": BUILD,
+        },
+    )
+
+
+@app.get("/api/health/db")
+def health_db() -> JSONResponse:
+    """Prove the database round trip specifically, and describe it when it fails.
+
+    /api/health answers "did the code load" and /api/meta needs a working query;
+    this sits between them so a storage problem names itself.
+    """
+    url = db.postgres_url()
+    parsed = urlsplit(url) if url else None
+    described = (
+        {
+            "scheme": parsed.scheme,
+            "host": parsed.hostname,
+            "port": parsed.port,
+            "database": parsed.path.lstrip("/"),
+            "user": parsed.username,
+            "has_password": bool(parsed.password),
+            "query": parsed.query,
+            "pooled_endpoint": "-pooler" in (parsed.hostname or ""),
+        }
+        if parsed
+        else None
+    )
+
+    started = time.perf_counter()
+    try:
+        with db.cursor() as cur:
+            cur.execute("SELECT 1")
+            cur.fetchone()
+    except Exception as exc:  # noqa: BLE001 -- the point is to describe any failure
+        return JSONResponse(
+            status_code=500,
+            content={
+                "ok": False,
+                "storage": "postgres" if db.IS_POSTGRES else "sqlite",
+                "error_type": type(exc).__name__,
+                "error": _redact(str(exc))[:600],
+                "elapsed_ms": round((time.perf_counter() - started) * 1000),
+                "connection": described,
+            },
+        )
+    return JSONResponse(
+        content={
+            "ok": True,
+            "storage": "postgres" if db.IS_POSTGRES else "sqlite",
+            "elapsed_ms": round((time.perf_counter() - started) * 1000),
+            "connection": described,
+        }
+    )
 
 
 @app.exception_handler(404)
