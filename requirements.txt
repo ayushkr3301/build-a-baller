@@ -1,0 +1,6 @@
+# Installed by Vercel for the api/index.py serverless function.
+# Runtime only -- uvicorn isn't needed because Vercel invokes the ASGI app
+# directly, and pytest/httpx belong in backend/requirements.txt.
+fastapi==0.115.6
+pydantic==2.10.4
+psycopg[binary]==3.2.3
