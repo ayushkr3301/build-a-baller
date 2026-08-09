@@ -8,6 +8,7 @@ offered player is stored server-side until it is taken or skipped.
 from __future__ import annotations
 
 import json
+import os
 import random
 import secrets
 from pathlib import Path
@@ -22,6 +23,10 @@ from .data.attributes import ERAS, N_CRITERIA, N_SPINS, POSITIONS, TIERS, attr_k
 from .data.clubs import CLUBS, CLUB_BY_ID, DISPLAY_CLUB_BY_ID
 from .models import CreateRun, TakeAttribute, VetoClubs
 from .sim import simulate_season
+
+# Bumped when the deployment surface changes, so /api/health proves which
+# build a server is actually running.
+BUILD = "2026-08-09-diagnostic"
 
 app = FastAPI(title="Build A Baller", version="1.0.0")
 
@@ -131,6 +136,26 @@ def _public(row, state: dict) -> dict:
 # --------------------------------------------------------------------------- #
 # Metadata
 # --------------------------------------------------------------------------- #
+
+
+@app.get("/api/health")
+def health() -> dict:
+    """Liveness that deliberately touches nothing.
+
+    /api/meta reads the hall-of-fame counters, so a database problem and a broken
+    deployment look identical there. This answers only "did the code load", which
+    is what you want first when a serverless function is returning 500s.
+    """
+    return {
+        "ok": True,
+        "build": BUILD,
+        "storage": "postgres" if db.IS_POSTGRES else "sqlite",
+        "database_env_vars": sorted(
+            k for k in os.environ if "POSTGRES" in k or "DATABASE" in k
+        ),
+        "criteria": N_CRITERIA,
+        "spins": N_SPINS,
+    }
 
 
 @app.get("/api/meta")

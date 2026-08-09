@@ -21,6 +21,9 @@ import sys
 import traceback
 from pathlib import Path
 
+# Bumped whenever this file changes, so /api/health can prove which build is live.
+BUILD = "2026-08-09-diagnostic"
+
 BACKEND = Path(__file__).resolve().parent.parent / "backend"
 if str(BACKEND) not in sys.path:
     sys.path.insert(0, str(BACKEND))
@@ -29,6 +32,7 @@ if str(BACKEND) not in sys.path:
 def _diagnostic_app(exc: BaseException):
     """A zero-dependency ASGI app that explains why the real one didn't load."""
     payload = {
+        "build": BUILD,
         "error": "The backend failed to import, so the API never started.",
         "exception": f"{type(exc).__name__}: {exc}",
         "traceback": traceback.format_exc().splitlines()[-20:],
