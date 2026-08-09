@@ -16,6 +16,7 @@ import json
 import os
 import sqlite3
 import threading
+import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -78,6 +79,11 @@ if os.environ.get("VERCEL") and not IS_POSTGRES:
     )
 
 _local = threading.local()
+
+# How long a cached Postgres connection may sit unused before it is probed rather
+# than trusted. Short enough that a frozen instance is caught, long enough that the
+# two calls inside one request don't each pay for a round trip.
+PROBE_AFTER_IDLE_SECONDS = 5.0
 
 # `id` is a short opaque token, not a serial -- it's the URL the client holds.
 SCHEMA = """
@@ -146,22 +152,68 @@ def _ensure_schema(conn) -> None:
     _initialised = True
 
 
+def _live_postgres_connection():
+    """A cached Postgres connection, reconnecting only when the old one is dead.
+
+    Opening a connection to Neon costs ~2s (TLS + auth) against ~10ms for a query
+    on an open one, and a single request reads then writes the run -- so opening
+    per call made every spin wait about four seconds. Serverless instances stay
+    warm between invocations, so the connection is cached across them.
+
+    A frozen instance can outlive its socket, and `conn.closed` won't show a
+    server-side hangup, so a connection that has been sitting idle gets a
+    one-round-trip probe before use -- cheap against the ~2s of reconnecting, and
+    done before the caller's cursor is handed out, because retrying around the
+    yield instead would make the context manager yield twice.
+
+    The probe is skipped for a connection used moments ago. A single request
+    reads the run and then writes it back, and making the second call re-probe
+    doubled the round trips for no protection the first probe hadn't given.
+    """
+    import psycopg
+
+    conn = getattr(_local, "pg", None)
+    idle = time.monotonic() - getattr(_local, "pg_used_at", 0.0)
+
+    if conn is not None and not conn.closed:
+        if idle < PROBE_AFTER_IDLE_SECONDS:
+            _local.pg_used_at = time.monotonic()
+            return conn
+        try:
+            conn.execute("SELECT 1")
+            _local.pg_used_at = time.monotonic()
+            return conn
+        except (psycopg.OperationalError, psycopg.InterfaceError):
+            _drop_cached_connection()
+
+    conn = _connect_postgres()
+    _local.pg = conn
+    _local.pg_used_at = time.monotonic()
+    _ensure_schema(conn)
+    return conn
+
+
+def _drop_cached_connection() -> None:
+    conn = getattr(_local, "pg", None)
+    _local.pg = None
+    if conn is not None:
+        try:
+            conn.close()
+        except Exception:  # already broken; nothing useful to do
+            pass
+
+
 @contextmanager
 def cursor():
     """A cursor over the right backend.
 
-    Postgres connections are opened per call: serverless instances are frozen
-    between invocations, so a cached socket is usually dead by the next request.
-    SQLite is a local file, so the connection is kept per-thread.
+    Postgres reuses a per-thread connection and retries once on a stale socket;
+    SQLite is a local file and is simply kept open per-thread.
     """
     if IS_POSTGRES:
-        conn = _connect_postgres()
-        try:
-            _ensure_schema(conn)
-            with conn.cursor() as cur:
-                yield cur
-        finally:
-            conn.close()
+        conn = _live_postgres_connection()
+        with conn.cursor() as cur:
+            yield cur
     else:
         conn = getattr(_local, "conn", None)
         if conn is None:

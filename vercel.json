@@ -4,6 +4,7 @@
   "outputDirectory": "frontend/dist",
   "installCommand": "echo 'frontend deps are installed by buildCommand'",
   "framework": null,
+  "regions": ["iad1"],
   "functions": {
     "api/index.py": {
       "includeFiles": "backend/**",

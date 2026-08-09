@@ -198,6 +198,41 @@ def test_hall_of_fame_reads_back_from_postgres(pg_client):
     assert pg_client.get("/api/hall-of-fame?position=GK").json()["entries"] == []
 
 
+def test_a_dead_cached_connection_is_replaced_not_raised(pg_client):
+    """A frozen serverless instance can outlive its socket; the next call must recover."""
+    from app import db as db_mod
+
+    with db_mod.cursor() as cur:
+        cur.execute("SELECT 1")
+    cached = db_mod._local.pg
+    assert cached is not None and not cached.closed
+
+    # Kill it the way an idle timeout on the server would.
+    cached.close()
+    assert cached.closed
+
+    with db_mod.cursor() as cur:
+        cur.execute("SELECT 1")
+        assert cur.fetchone() is not None
+    assert db_mod._local.pg is not cached, "expected a fresh connection"
+
+    # ...and the API still works over the replacement.
+    assert pg_client.get("/api/meta").status_code == 200
+
+
+def test_the_connection_is_reused_between_calls(pg_client):
+    """Regression: reconnecting per call cost ~2s a request against Neon."""
+    from app import db as db_mod
+
+    with db_mod.cursor() as cur:
+        cur.execute("SELECT 1")
+    first = db_mod._local.pg
+    for _ in range(5):
+        with db_mod.cursor() as cur:
+            cur.execute("SELECT 1")
+    assert db_mod._local.pg is first, "connection should be cached, not reopened"
+
+
 def test_stats_and_missing_run_behave_on_postgres(pg_client):
     meta = pg_client.get("/api/meta").json()
     assert meta["stats"]["runs_completed"] == 0

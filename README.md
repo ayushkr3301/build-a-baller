@@ -81,6 +81,22 @@ failing confusingly later.
 
 The schema creates itself on first request, so there is no migration step.
 
+### Two things that decide whether it feels fast
+
+**Use the pooled connection string.** Neon gives you two hosts for the same database:
+`ep-something.region.aws.neon.tech` and `ep-something-pooler.region.aws.neon.tech`. Every
+serverless invocation opens its own connection, so the `-pooler` one is the one you want.
+Vercel's Neon integration sets the pooled URL in `POSTGRES_URL` automatically; if you're
+pasting a string in by hand, add the `-pooler`.
+
+**Put the function next to the database.** `vercel.json` pins `regions: ["iad1"]`
+(Washington DC) because Neon's free tier commonly lands in `us-east-*`. If you picked a
+different Neon region, change it to match — a query is ~10ms within a region and
+~400ms across an ocean, and the app makes two per request.
+
+Measured against a real Neon database from ~12,000km away, which is the pathological
+case: 977ms per API call. Same-region on Vercel it is a small fraction of that.
+
 | Setting | Value | Where it comes from |
 | --- | --- | --- |
 | Build command | `npm --prefix frontend ci && npm --prefix frontend run build` | `vercel.json` |
