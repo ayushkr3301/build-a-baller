@@ -48,6 +48,49 @@ cd backend && ./.venv/bin/python -m pytest tests/ -q
 the era curve, fixture generation, season-table consistency, and a full API run from
 creation to hall of fame.
 
+Four more run against a real Postgres instead of SQLite, and are skipped unless you
+point them at a throwaway database:
+
+```bash
+docker run -d --name bab-pg -e POSTGRES_PASSWORD=bab -e POSTGRES_DB=bab -p 55432:5432 postgres:16-alpine
+```
+
+```bash
+cd backend && BAB_TEST_POSTGRES_URL=postgresql://postgres:bab@127.0.0.1:55432/bab ./.venv/bin/python -m pytest tests/ -q
+```
+
+---
+
+## Deploying to Vercel
+
+The repo is already configured — `vercel.json` builds the frontend as a static site and
+runs the FastAPI app as a Python serverless function at `/api/*`.
+
+**You must attach a Postgres database.** Vercel's filesystem is ephemeral and
+per-instance, so SQLite would lose a run between the spin that created it and the very
+next request. The app refuses to boot on Vercel without a connection string rather than
+failing confusingly later.
+
+1. **Import the repo** — vercel.com → *Add New… → Project* → import `build-a-baller`.
+   Leave every build setting alone; `vercel.json` supplies them.
+2. **Add the database** — in the project, *Storage → Create Database → Postgres (Neon)*.
+   Accept the free plan and connect it to the project. Vercel injects `POSTGRES_URL`
+   and friends automatically; nothing to copy or paste.
+3. **Redeploy** — *Deployments → ⋯ → Redeploy* on the latest build, so the function
+   picks up the new environment variables.
+
+The schema creates itself on first request, so there is no migration step.
+
+| Setting | Value | Where it comes from |
+| --- | --- | --- |
+| Build command | `npm --prefix frontend ci && npm --prefix frontend run build` | `vercel.json` |
+| Output directory | `frontend/dist` | `vercel.json` |
+| API function | `api/index.py` (re-exports the ASGI app) | `/api` auto-detection |
+| Python deps | root `requirements.txt` | Vercel Python runtime |
+
+Local development is unchanged: with no `POSTGRES_URL` set, everything falls back to
+SQLite at `backend/data/runs.db`.
+
 ---
 
 ## The rules, precisely
