@@ -159,6 +159,14 @@ export function Daily({ onPlay, onResume, onPractice, busy }: Props) {
             <h3>Today's board</h3>
             <span>{info.leaderboard.length} finished</span>
           </div>
+          {info.perfect_today > 0 && (
+            <p className="hint perfect-today">
+              🏆 <b>
+                {info.perfect_today} player{info.perfect_today === 1 ? '' : 's'}
+              </b>{' '}
+              found the perfect card today. It's there in these exact spins — can you?
+            </p>
+          )}
           {info.leaderboard.length === 0 ? (
             <p className="hint">Nobody has finished yet. Be the first name up there.</p>
           ) : (
@@ -177,10 +185,15 @@ export function Daily({ onPlay, onResume, onPractice, busy }: Props) {
                 </thead>
                 <tbody>
                   {info.leaderboard.map((row, i) => (
-                    <tr key={`${row.player_name}-${i}`}>
+                    <tr key={`${row.player_name}-${i}`} className={row.perfect ? 'row-perfect' : ''}>
                       <td className={`rank-cell${i < 3 ? ` rank-${i + 1}` : ''}`}>{i + 1}</td>
                       <td>
                         <b>{row.player_name}</b>
+                        {row.perfect && (
+                          <span className="perfect-tag" title="Perfect card — took everything the hand allowed">
+                            🏆
+                          </span>
+                        )}
                       </td>
                       <td className="num">
                         <span className="ovr-cell">{row.overall}</span>

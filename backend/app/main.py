@@ -223,6 +223,9 @@ def _career_payload(state: dict) -> dict | None:
         "seasons": data["seasons"],
         "honours": data["honours"],
         "ballon_dor": data["ballon_dor"],
+        # "decision" -> the summer's choices are live; "review" -> the season just
+        # played is on the table and the player clicks through to the next summer.
+        "stage": state.get("career_stage", "decision"),
         "options": state.get("career_options", []),
         "summary": career_mode.career_summary(data) if data["retired"] else None,
     }
@@ -427,6 +430,7 @@ def daily(player_token: str | None = None) -> dict:
         "days_played": len(history),
         "records": db.player_records(player_token) if player_token else None,
         "leaderboard": db.daily_leaderboard(setup["date"]),
+        "perfect_today": db.daily_perfect_count(setup["date"]),
     }
 
 
@@ -690,19 +694,42 @@ def career_start(run_id: str, body: StartCareer) -> dict:
         potential_ratings=ratings,
         seed=state["seed"],
     )
-    rng = random.Random(f"{state['seed']}:career:0")
     state["career"] = data
-    state["career_options"] = career_mode.decision_options(data, rng)
+    state["career_options"] = career_mode.decision_options(data, _decision_rng(state))
+    state["career_stage"] = "decision"
     state["phase"] = "career"
     db.save_state(run_id, state, overall=board.overall, club_id=data["club_id"])
     return _public(db.get_run(run_id), state)
 
 
+def _decision_rng(state: dict) -> random.Random:
+    """Deterministic rng for the summer offered before season len(seasons).
+
+    Distinct from the season-play rng so resuming a run and asking for the same
+    summer's choices always yields the same menu.
+    """
+    return random.Random(f"{state['seed']}:decision:{len(state['career']['seasons'])}")
+
+
+def _require_career_stage(state: dict, *stages: str) -> None:
+    stage = state.get("career_stage", "decision")
+    if stage not in stages:
+        raise HTTPException(
+            409, f"career is at the {stage!r} stage; expected one of {list(stages)}"
+        )
+
+
 @app.post("/api/runs/{run_id}/career/advance")
 def career_advance(run_id: str, body: CareerChoice) -> dict:
-    """Take the summer decision, play the season, present the next one."""
+    """Take the summer decision and play the season, then pause on the result.
+
+    Playing the year and choosing the next one are two steps now: this stops on a
+    season dashboard (the "review" stage) so the year that just happened gets its
+    own moment before the next decision is put in front of the player.
+    """
     row, state = _load(run_id)
     _require_phase(state, "career")
+    _require_career_stage(state, "decision")
     data = state.get("career")
     if not data or data["retired"]:
         raise HTTPException(409, "this career is over")
@@ -713,13 +740,32 @@ def career_advance(run_id: str, body: CareerChoice) -> dict:
 
     if data["retired"]:
         state["career_options"] = []
+        state["career_stage"] = "review"
         state["phase"] = "complete"
         summary = career_mode.career_summary(data)
         season_like = _career_as_season(data, summary)
         db.save_season(run_id, state, season_like)
     else:
-        state["career_options"] = career_mode.decision_options(data, rng)
+        # Hold the next menu back until the player has seen how the season went.
+        state["career_options"] = []
+        state["career_stage"] = "review"
         db.save_state(run_id, state, club_id=data["club_id"])
+    return _public(db.get_run(run_id), state)
+
+
+@app.post("/api/runs/{run_id}/career/continue")
+def career_continue(run_id: str) -> dict:
+    """Leave the season dashboard and lay out the next summer's decision."""
+    row, state = _load(run_id)
+    _require_phase(state, "career")
+    _require_career_stage(state, "review")
+    data = state.get("career")
+    if not data or data["retired"]:
+        raise HTTPException(409, "this career is over")
+
+    state["career_options"] = career_mode.decision_options(data, _decision_rng(state))
+    state["career_stage"] = "decision"
+    db.save_state(run_id, state, club_id=data["club_id"])
     return _public(db.get_run(run_id), state)
 
 

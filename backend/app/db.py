@@ -341,13 +341,37 @@ def daily_leaderboard(day: str, limit: int = 25) -> list[dict]:
         cur.execute(
             _sql(
                 "SELECT player_name, overall, grade, goals, assists, clean_sheets,"
-                " avg_rating, club_name, league_pos FROM runs"
+                " avg_rating, club_name, league_pos, perfect FROM runs"
                 " WHERE daily_date = ? AND completed_at IS NOT NULL AND mode = 'daily'"
-                " ORDER BY overall DESC, avg_rating DESC LIMIT ?"
+                # Perfect cards float above equal-overall cards, then avg rating.
+                # COALESCE so a pre-migration NULL doesn't sort first under Postgres.
+                " ORDER BY overall DESC, COALESCE(perfect, 0) DESC, avg_rating DESC LIMIT ?"
             ),
             (day, limit),
         )
-        return [dict(r) for r in cur.fetchall()]
+        rows = [dict(r) for r in cur.fetchall()]
+    for r in rows:
+        r["perfect"] = bool(r.get("perfect"))
+    return rows
+
+
+def daily_perfect_count(day: str) -> int:
+    """How many players nailed the perfect card today.
+
+    Social proof that the win is real and achievable: a board that shows a handful
+    of people already did it is what makes the next player try for it.
+    """
+    with cursor() as cur:
+        cur.execute(
+            _sql(
+                "SELECT COUNT(*) AS n FROM runs"
+                " WHERE daily_date = ? AND completed_at IS NOT NULL"
+                " AND mode = 'daily' AND perfect = 1"
+            ),
+            (day,),
+        )
+        row = _row_to_dict(cur.fetchone()) or {}
+    return row.get("n") or 0
 
 
 def daily_history(player_token: str, limit: int = 400) -> list[str]:

@@ -310,6 +310,7 @@ export interface DailyInfo {
   streak: number
   days_played: number
   records: PlayerRecords | null
+  perfect_today: number
   leaderboard: {
     player_name: string
     overall: number
@@ -320,6 +321,7 @@ export interface DailyInfo {
     avg_rating: number
     club_name: string | null
     league_pos: number
+    perfect: boolean
   }[]
 }
 
@@ -400,6 +402,7 @@ export interface CareerState {
   seasons: CareerSeason[]
   honours: { year: number; trophy: string; club: string }[]
   ballon_dor: { year: number; rank: number }[]
+  stage: 'decision' | 'review'
   options: CareerOption[]
   summary: CareerSummary | null
 }

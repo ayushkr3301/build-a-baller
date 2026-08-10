@@ -10,6 +10,7 @@ interface Props {
   meta: Meta
   onStart: (nationality: string) => Promise<void>
   onChoose: (optionId: string) => Promise<void>
+  onContinue: () => Promise<void>
   onRestart: () => void
   busy: boolean
 }
@@ -34,7 +35,7 @@ function Stat({ value, label, tone }: { value: number; label: string; tone?: str
   )
 }
 
-export function Career({ run, meta, onStart, onChoose, onRestart, busy }: Props) {
+export function Career({ run, meta, onStart, onChoose, onContinue, onRestart, busy }: Props) {
   const [nationality, setNationality] = useState('eng')
   const attributes: AttributeMeta[] =
     meta.positions.find((p) => p.key === run.position)?.attributes ?? []
@@ -113,13 +114,15 @@ export function Career({ run, meta, onStart, onChoose, onRestart, busy }: Props)
   // ------------------------------------------------------------------ playing
   const progress = Math.round(((career.overall - 40) / (career.potential - 40)) * 100)
   const last = career.seasons[career.seasons.length - 1]
+  const reviewing = career.stage === 'review' && last
 
   return (
     <div className="page">
       <div className="career-header">
         <div>
           <div className="eyebrow">
-            {career.year} · Age {career.age} · {career.nationality}
+            {reviewing ? `${last.year} in review` : `Summer ${career.year}`} · Age {career.age} ·{' '}
+            {career.nationality}
           </div>
           <h2>{run.player_name}</h2>
           <p className="hint">
@@ -142,50 +145,87 @@ export function Career({ run, meta, onStart, onChoose, onRestart, busy }: Props)
         </div>
       </div>
 
-      {last && <SeasonRecap season={last} />}
-
-      <div className="panel">
-        <div className="panel-head">
-          <h3>Summer {career.year}</h3>
-          <span>One decision. It sets up the whole season.</span>
+      {reviewing ? (
+        <SeasonDashboard season={last} busy={busy} onContinue={onContinue} />
+      ) : (
+        <div className="panel">
+          <div className="panel-head">
+            <h3>Summer {career.year}</h3>
+            <span>One decision. It sets up the whole season.</span>
+          </div>
+          <div className="decision-grid">
+            {career.options.map((o) => (
+              <button
+                key={o.id}
+                className="decision"
+                disabled={busy}
+                onClick={() => {
+                  play('lock')
+                  void onChoose(o.id)
+                }}
+              >
+                <span className={`decision-tag ${TAG_TONE[o.tag] ?? ''}`}>{o.tag}</span>
+                <span className="decision-title">{o.title}</span>
+                <span className="decision-detail">{o.detail}</span>
+              </button>
+            ))}
+          </div>
         </div>
-        <div className="decision-grid">
-          {career.options.map((o) => (
-            <button
-              key={o.id}
-              className="decision"
-              disabled={busy}
-              onClick={() => {
-                play('lock')
-                void onChoose(o.id)
-              }}
-            >
-              <span className={`decision-tag ${TAG_TONE[o.tag] ?? ''}`}>{o.tag}</span>
-              <span className="decision-title">{o.title}</span>
-              <span className="decision-detail">{o.detail}</span>
-            </button>
-          ))}
-        </div>
-      </div>
+      )}
 
       {career.seasons.length > 0 && <CareerTimeline seasons={career.seasons} />}
     </div>
   )
 }
 
-function SeasonRecap({ season }: { season: CareerSeason }) {
+/** What the season just played added up to — the between-seasons dashboard. */
+function seasonVerdict(s: CareerSeason): string {
+  const growth = s.overall_after - s.overall_before
+  const major = s.trophies.find((t) =>
+    ['Premier League', 'Champions League', 'Europa League'].includes(t),
+  )
+  if (s.ballon_dor_rank === 1) return 'The best season on the planet. Nobody had a better year.'
+  if (major) return `Silverware: ${major.toLowerCase()} champions, and your name on it.`
+  if (s.trophies.length > 0) return `A trophy in the cabinet — ${s.trophies.join(', ')}.`
+  if (s.on_loan) return 'A loan spell of real minutes. Exactly what a young player needs.'
+  if (growth >= 3) return `A big step forward: +${growth} to your overall in one year.`
+  if (growth <= -2) return 'The legs are starting to go. Every year from here is borrowed time.'
+  if (s.league_position === 1) return 'League champions. However you played, you were part of it.'
+  if (s.avg_rating >= 7.2) return 'A genuinely excellent individual season, even without a medal.'
+  if (s.avg_rating < 6.4) return 'A season to forget. The next decision matters more because of it.'
+  return 'A steady year. The kind that keeps a career ticking over.'
+}
+
+function SeasonDashboard({
+  season,
+  busy,
+  onContinue,
+}: {
+  season: CareerSeason
+  busy: boolean
+  onContinue: () => Promise<void>
+}) {
   const growth = season.overall_after - season.overall_before
+  const notable =
+    season.trophies.length > 0 ||
+    !!season.europe ||
+    !!season.international?.tournament ||
+    season.ballon_dor_rank <= 30
+
   return (
-    <div className="panel recap">
+    <div className="panel season-dash">
       <div className="panel-head">
         <h3>
           {season.year} · {season.club}
           {season.on_loan && <span className="loan-badge">on loan</span>}
         </h3>
         <span>
-          finished {season.league_position} · {season.grade}
+          finished {ordinal(season.league_position)} · graded {season.grade}
         </span>
       </div>
+
+      <p className="season-verdict">{seasonVerdict(season)}</p>
+
       <div className="tiles">
         <Stat value={season.apps} label="Appearances" />
         <Stat value={season.goals} label="Goals" tone="accent" />
@@ -194,15 +234,24 @@ function SeasonRecap({ season }: { season: CareerSeason }) {
           <b>{season.avg_rating.toFixed(2)}</b>
           <span>Avg rating</span>
         </div>
-        <div className={`tile ${growth >= 0 ? 'accent' : ''}`}>
+        <div className={`tile ${growth > 0 ? 'accent' : ''}`}>
           <b>
             {growth >= 0 ? '+' : ''}
             {growth}
           </b>
-          <span>Overall</span>
+          <span>Overall {growth >= 0 ? 'growth' : 'drop'}</span>
+        </div>
+        <div className="tile">
+          <b>
+            {season.overall_before}
+            <span className="dash-arrow">→</span>
+            {season.overall_after}
+          </b>
+          <span>End of season</span>
         </div>
       </div>
-      {(season.trophies.length > 0 || season.europe || season.international?.tournament) && (
+
+      {notable && (
         <div className="recap-notes">
           {season.trophies.map((t) => (
             <span className="honour-chip" key={t}>
@@ -212,20 +261,39 @@ function SeasonRecap({ season }: { season: CareerSeason }) {
           {season.europe && !season.europe.won && (
             <span className="chip">
               {season.europe.competition}: {season.europe.reached}
+              {season.europe.goals > 0 ? ` · ${season.europe.goals}g` : ''}
             </span>
           )}
-          {season.international?.tournament && !season.international.tournament.won && (
+          {season.international && (
             <span className="chip">
-              {season.international.tournament.name}: {season.international.tournament.reached}
+              {season.international.nation}: {season.international.caps} caps
+              {season.international.goals > 0 ? `, ${season.international.goals}g` : ''}
+              {season.international.tournament && !season.international.tournament.won
+                ? ` · ${season.international.tournament.name} ${season.international.tournament.reached}`
+                : ''}
             </span>
           )}
           {season.ballon_dor_rank <= 30 && (
-            <span className="chip">Ballon d'Or #{season.ballon_dor_rank}</span>
+            <span className={`chip${season.ballon_dor_rank === 1 ? ' chip-gold' : ''}`}>
+              {season.ballon_dor_rank === 1 ? '🥇 Ballon d’Or winner' : `Ballon d'Or #${season.ballon_dor_rank}`}
+            </span>
           )}
         </div>
       )}
+
+      <div className="btn-row" style={{ marginTop: 20 }}>
+        <button className="btn btn-primary" disabled={busy} onClick={() => void onContinue()}>
+          {busy ? 'Loading next summer…' : 'Next season →'}
+        </button>
+      </div>
     </div>
   )
+}
+
+function ordinal(n: number): string {
+  const t = n % 100
+  if (t >= 11 && t <= 13) return `${n}th`
+  return `${n}${['th', 'st', 'nd', 'rd'][n % 10] ?? 'th'}`
 }
 
 function CareerTimeline({ seasons }: { seasons: CareerSeason[] }) {

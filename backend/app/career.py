@@ -213,9 +213,43 @@ class Option:
 
 LOAN_TARGETS = [c.id for c in EFL_CLUBS[:8]]
 
+# Recurring options wear thin if they read identically every summer, so the ones
+# offered most often carry a small pool of interchangeable phrasings. Picked from a
+# summer-seeded rng that never touches the decision rng, so the tuned career balance
+# (measured across dozens of seeds in tests/test_career.py) is unchanged by them.
+STAY_DETAIL = [
+    "Fight for your place where you are. No upheaval, no guarantees.",
+    "Another year in familiar colours. Prove you're still first choice.",
+    "Re-sign and dig in. The badge already knows your name.",
+    "Stay put and let the football do the talking for once.",
+]
+PAYDAY_DETAIL = [
+    "Enormous wages, a smaller club, and the writers deciding you were never that serious.",
+    "The bank-breaking offer from a lesser side. Your accountant is delighted; your legacy less so.",
+    "Chase the money down the table. Nobody remembers a rich runner-up, but the cheque clears.",
+]
+LOAN_DETAIL = [
+    "Drop a level for a season of guaranteed football. Nothing develops a young player like playing.",
+    "A year in the second tier where you'll actually start every week. Go and learn the game.",
+    "Leave the reserves behind for real minutes somewhere hungrier. Come back a player.",
+]
+STEP_UP_DETAIL = [
+    "A bigger club, a bigger stage, and a much harder fight for minutes. Sink or swim.",
+    "Move up the ladder and back yourself. The football is faster and the patience shorter.",
+    "Trade a guaranteed shirt for a shot at the top. Nobody said it would be comfortable.",
+]
+
 
 def decision_options(state: dict, rng: random.Random) -> list[dict]:
-    """Three to five options for this summer, tailored to the situation."""
+    """Three to six options for this summer, tailored to the situation.
+
+    The strategic backbone -- stay, loan, step up, payday, talisman, rotate,
+    retrain -- is unchanged and always offered whenever it applies; its club
+    targets are still drawn from `rng` in the same order, so the career balance the
+    tests pin down is untouched. On top of it sit occasional *event* options, and
+    the flavour text of the recurring ones varies, both driven by a separate
+    summer-seeded rng so no two summers feel like a copy of the last.
+    """
     age = state["age"]
     overall = state["overall"]
     club_id = state["club_id"]
@@ -225,11 +259,15 @@ def decision_options(state: dict, rng: random.Random) -> list[dict]:
     played_a_lot = bool(last and last["apps"] >= 22)
     ranked = clubs_by_rank()
 
+    # Independent of `rng`: everything fresh is chosen here so the decision rng that
+    # the balance depends on is consumed exactly as it always was.
+    flavour = random.Random(f"{state['seed']}:summer:{len(state['seasons'])}")
+
     options: list[Option] = [
         Option(
             id="stay",
             title=f"Stay at {club.name}",
-            detail="Fight for your place where you are. No upheaval, no guarantees.",
+            detail=flavour.choice(STAY_DETAIL),
             club_id=club_id,
             tag="Steady",
         )
@@ -242,10 +280,7 @@ def decision_options(state: dict, rng: random.Random) -> list[dict]:
             Option(
                 id="loan",
                 title="Go out on loan",
-                detail=(
-                    "Drop a level for a season of guaranteed football. Nothing develops "
-                    "a young player like actually playing."
-                ),
+                detail=flavour.choice(LOAN_DETAIL),
                 club_id=target,
                 opportunity=1.45,
                 growth_modifier=1.30,
@@ -264,10 +299,7 @@ def decision_options(state: dict, rng: random.Random) -> list[dict]:
                 Option(
                     id="step_up",
                     title=f"Push for a move to {target.name}",
-                    detail=(
-                        "A bigger club, a bigger stage, and a much harder fight for "
-                        "minutes. Sink or swim."
-                    ),
+                    detail=flavour.choice(STEP_UP_DETAIL),
                     club_id=target.id,
                     opportunity=0.72,
                     growth_modifier=1.12,
@@ -284,10 +316,7 @@ def decision_options(state: dict, rng: random.Random) -> list[dict]:
             Option(
                 id="payday",
                 title=f"Take the money at {target.name}",
-                detail=(
-                    "Enormous wages, a smaller club, and the football writers deciding "
-                    "you were never that serious."
-                ),
+                detail=flavour.choice(PAYDAY_DETAIL),
                 club_id=target.id,
                 opportunity=1.25,
                 growth_modifier=0.82,
@@ -351,8 +380,164 @@ def decision_options(state: dict, rng: random.Random) -> list[dict]:
             )
         )
 
+    # One or two situational "events" on top, so the menu changes shape season to
+    # season rather than showing the same three or four cards forever. New ids the
+    # strategy tests never pick, chosen from the summer rng -- pure freshness, no
+    # effect on the tuned outcomes.
+    events = _event_options(state, flavour, tier, played_a_lot, ranked)
+    if events:
+        flavour.shuffle(events)
+        slots = max(0, 6 - len(options))
+        take = min(len(events), slots, flavour.choice([1, 1, 2]))
+        options.extend(events[:take])
+
     state["_options"] = {o.id: o.__dict__ for o in options}
     return [o.as_dict() for o in options]
+
+
+def _event_options(
+    state: dict,
+    flavour: random.Random,
+    tier: int,
+    played_a_lot: bool,
+    ranked: list,
+) -> list[Option]:
+    """The pool of occasional, situation-driven offers for this summer.
+
+    Every one reuses the same mechanics the core options do (a club, an
+    opportunity/growth/wage tilt); the value they add is variety of *situation* and
+    tone, not new simulation behaviour.
+    """
+    age = state["age"]
+    overall = state["overall"]
+    club_id = state["club_id"]
+    club = CLUB_BY_ID[club_id]
+    last = state["seasons"][-1] if state["seasons"] else None
+    seasons = len(state["seasons"])
+    start_club_id = state["clubs_played_for"][0] if state.get("clubs_played_for") else club_id
+
+    def pick(pool: list, exclude: set[str]) -> object | None:
+        choices = [c for c in pool if c.id not in exclude]
+        return flavour.choice(choices) if choices else None
+
+    events: list[Option] = []
+
+    # The armband: a settled senior pro at a club that plays them.
+    if seasons >= 2 and played_a_lot and 23 <= age <= 34 and tier <= 2:
+        events.append(
+            Option(
+                id="captain",
+                title=f"Take the {club.name} armband",
+                detail=(
+                    "Lead them out every week. More responsibility, more scrutiny, and "
+                    "every result laid at your door."
+                ),
+                club_id=club_id,
+                opportunity=1.18,
+                growth_modifier=1.05,
+                wage=1.25,
+                tag="Status",
+            )
+        )
+
+    # A giant comes calling to chase the title.
+    if played_a_lot and last and last["avg_rating"] >= 7.0 and tier >= 1 and age <= 30:
+        target = pick(ranked[:2], {club_id})
+        if target:
+            events.append(
+                Option(
+                    id="title_charge",
+                    title=f"Chase the title with {target.name}",
+                    detail=(
+                        "The biggest club in the land wants you. A winner's medal is on "
+                        "the table -- if you can force your way into that eleven."
+                    ),
+                    club_id=target.id,
+                    opportunity=0.68,
+                    growth_modifier=1.12,
+                    wage=2.1,
+                    tag="Ambition",
+                )
+            )
+
+    # Drop down and be the hero of a club fighting the drop.
+    if overall >= 74 and age <= 33 and tier <= 2:
+        target = pick(ranked[-6:], {club_id})
+        if target:
+            events.append(
+                Option(
+                    id="rescue",
+                    title=f"Be {target.name}'s star man",
+                    detail=(
+                        "Join a side scrapping to survive and carry them. Every attack "
+                        "runs through you -- so does every post-match camera."
+                    ),
+                    club_id=target.id,
+                    opportunity=1.35,
+                    growth_modifier=1.0,
+                    wage=1.35,
+                    tag="Status",
+                )
+            )
+
+    # Go home to where it started.
+    if seasons >= 4 and age >= 26 and start_club_id != club_id and start_club_id in CLUB_BY_ID:
+        home = CLUB_BY_ID[start_club_id]
+        events.append(
+            Option(
+                id="homecoming",
+                title=f"Go home to {home.name}",
+                detail=(
+                    "Return to where it began. The supporters never forgot you, and you "
+                    "never quite stopped being one of them."
+                ),
+                club_id=start_club_id,
+                opportunity=1.15,
+                growth_modifier=1.0,
+                wage=1.1,
+                tag="Steady",
+            )
+        )
+
+    # Something to prove after a poor year.
+    if last and last["avg_rating"] < 6.6 and age <= 31:
+        events.append(
+            Option(
+                id="prove_point",
+                title="Sign a short deal to prove a point",
+                detail=(
+                    "One year, everything to prove. Play like your career depends on it "
+                    "-- for once it might."
+                ),
+                club_id=club_id,
+                opportunity=1.25,
+                growth_modifier=1.08,
+                wage=0.85,
+                tag="Ambition",
+            )
+        )
+
+    # A veteran's last adventure.
+    if age >= 31 and tier <= 2:
+        target = pick(ranked[6:14], {club_id})
+        if target:
+            events.append(
+                Option(
+                    id="swansong",
+                    title=f"Take a final payday at {target.name}",
+                    detail=(
+                        "A last big contract somewhere new. One more adventure before the "
+                        "boots go up on the wall."
+                    ),
+                    club_id=target.id,
+                    opportunity=1.1,
+                    growth_modifier=1.0,
+                    wage=1.6,
+                    tag="Money",
+                )
+            )
+
+    return events
 
 
 POSITION_LABEL = {"ST": "Striker", "MID": "Midfielder", "DEF": "Defender", "GK": "Goalkeeper"}

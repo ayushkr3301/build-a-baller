@@ -67,6 +67,10 @@ export const api = {
       body: JSON.stringify({ option_id }),
     }),
 
+  /** Leave the end-of-season dashboard and get the next summer's choices. */
+  continueCareer: (id: string) =>
+    request<Run>(`/runs/${id}/career/continue`, { method: 'POST' }),
+
   getRun: (id: string) => request<Run>(`/runs/${id}`),
 
   spin: (id: string) => request<Run>(`/runs/${id}/spin`, { method: 'POST' }),

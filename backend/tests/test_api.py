@@ -122,6 +122,75 @@ def test_full_run_through_to_a_simulated_season(client):
     assert hof[0]["overall"] is not None
 
 
+def _build_to_built(client, position="ST", era="current", name="Kid"):
+    """Play a run to a finished card, taking the best available each spin."""
+    run = start(client, position=position, era=era, name=name)
+    rid = run["id"]
+    state = run
+    while state["phase"] == "building":
+        state = client.post(f"/api/runs/{rid}/spin").json()
+        open_slots = [k for k, v in state["board"].items() if v is None]
+        best = max(open_slots, key=lambda k: state["current_offer"]["ratings"][k])
+        state = client.post(f"/api/runs/{rid}/take", json={"attribute": best}).json()
+    assert state["phase"] == "built"
+    return rid, state
+
+
+def test_career_pauses_on_a_season_dashboard_before_the_next_decision(client):
+    """The season played and the next decision are two steps: play, review, then choose."""
+    rid, _ = _build_to_built(client, name="Careerist")
+
+    started = client.post(f"/api/runs/{rid}/career/start", json={"nationality": "eng"}).json()
+    assert started["phase"] == "career"
+    career = started["career"]
+    assert career["stage"] == "decision"
+    assert career["options"], "the first summer must offer choices"
+    assert career["seasons"] == []
+
+    # Play a year: it stops on that season's review, not straight onto the next menu.
+    option = career["options"][0]["id"]
+    reviewed = client.post(f"/api/runs/{rid}/career/advance", json={"option_id": option}).json()
+    rc = reviewed["career"]
+    assert not rc["retired"], "an eighteen-year-old does not retire after one season"
+    assert rc["stage"] == "review"
+    assert rc["options"] == [], "the next menu is withheld until the player continues"
+    assert len(rc["seasons"]) == 1
+
+    # Advancing again mid-review is refused -- you must clear the dashboard first.
+    blocked = client.post(f"/api/runs/{rid}/career/advance", json={"option_id": "stay"})
+    assert blocked.status_code == 409
+
+    # Continue: fresh options for the next summer, and no double-continue.
+    nxt = client.post(f"/api/runs/{rid}/career/continue").json()
+    nc = nxt["career"]
+    assert nc["stage"] == "decision"
+    assert nc["options"], "continuing must lay out the next summer's choices"
+    assert client.post(f"/api/runs/{rid}/career/continue").status_code == 409
+
+
+def test_career_options_change_from_one_summer_to_the_next(client):
+    """The menu should not be the same three cards every year."""
+    rid, _ = _build_to_built(client, name="Journeyman", era="legends")
+    started = client.post(f"/api/runs/{rid}/career/start", json={"nationality": "eng"}).json()
+
+    seen: list[frozenset[str]] = []
+    career = started["career"]
+    for _ in range(6):
+        if career["retired"]:
+            break
+        if career["stage"] == "review":
+            career = client.post(f"/api/runs/{rid}/career/continue").json()["career"]
+            continue
+        seen.append(frozenset(o["id"] for o in career["options"]))
+        pick = career["options"][0]["id"]
+        career = client.post(
+            f"/api/runs/{rid}/career/advance", json={"option_id": pick}
+        ).json()["career"]
+
+    assert len(seen) >= 3
+    assert len(set(seen)) >= 2, f"summers were identical every year: {seen}"
+
+
 def test_skipping_twice_leaves_a_hole_in_the_board(client):
     run = start(client, position="GK")
     rid = run["id"]

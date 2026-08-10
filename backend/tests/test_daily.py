@@ -275,6 +275,22 @@ def test_the_share_text_announces_a_win_only_when_it_is_one(client):
         assert daily.GREEN * len(share["grid"]) != share["grid"]
 
 
+def test_the_daily_board_marks_and_counts_perfect_cards(client):
+    """The board flags perfect runs and the summary counts today's, for social proof."""
+    token = "tok-perfect-board"
+    run = client.post("/api/runs", json={
+        "player_name": "Ace", "position": "ST", "era": "current",
+        "mode": "daily", "player_token": token,
+    }).json()
+    finished = finish(client, build_out(client, run))
+    perfect = finished["best_possible"]["perfect"]
+
+    day = client.get(f"/api/daily?player_token={token}").json()
+    assert day["perfect_today"] == (1 if perfect else 0)
+    assert len(day["leaderboard"]) == 1
+    assert day["leaderboard"][0]["perfect"] is perfect
+
+
 def test_personal_records_track_the_closest_ever_run(client):
     token = "tok-records"
     run = client.post("/api/runs", json={

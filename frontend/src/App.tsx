@@ -149,11 +149,18 @@ export default function App() {
             busy={busy}
             onStart={(nat) => act(() => api.startCareer(run.id, nat)).then(() => {})}
             onChoose={(id) => act(() => api.advanceCareer(run.id, id)).then(() => {})}
+            onContinue={() => act(() => api.continueCareer(run.id)).then(() => {})}
             onRestart={restart}
           />
         )
+      // `built` is the fork: a career run turns the card into a potential, while a
+      // season/daily run heads into the draft. `vetoed` and `drafted` are the two
+      // draft sub-phases -- without them here the run would fall through to Home
+      // the moment vetoes are locked, and the season would never get simulated.
       case 'built':
-        if (run.mode === 'career') {
+      case 'vetoed':
+      case 'drafted':
+        if (run.mode === 'career' && run.phase === 'built') {
           return (
             <Career
               run={run}
@@ -161,6 +168,7 @@ export default function App() {
               busy={busy}
               onStart={(nat) => act(() => api.startCareer(run.id, nat)).then(() => {})}
               onChoose={(id) => act(() => api.advanceCareer(run.id, id)).then(() => {})}
+              onContinue={() => act(() => api.continueCareer(run.id)).then(() => {})}
               onRestart={restart}
             />
           )
@@ -184,6 +192,7 @@ export default function App() {
               busy={busy}
               onStart={(nat) => act(() => api.startCareer(run.id, nat)).then(() => {})}
               onChoose={(id) => act(() => api.advanceCareer(run.id, id)).then(() => {})}
+              onContinue={() => act(() => api.continueCareer(run.id)).then(() => {})}
               onRestart={restart}
             />
           )
