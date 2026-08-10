@@ -65,7 +65,7 @@ export function Home({ meta, onStart, onDaily, busy }: Props) {
 
       <div className="section">
         <div className="section-title">
-          <h3>Daily challenge</h3>
+          <h2>Daily challenge</h2>
           <span>Same spins for everyone, one attempt</span>
         </div>
         <button className="daily-banner" onClick={onDaily}>
@@ -82,7 +82,7 @@ export function Home({ meta, onStart, onDaily, busy }: Props) {
 
       <div className="section">
         <div className="section-title">
-          <h3>1. Pick a mode</h3>
+          <h2>1. Pick a mode</h2>
           <span>Or take the daily above</span>
         </div>
         <div className="choice-grid">
@@ -104,7 +104,7 @@ export function Home({ meta, onStart, onDaily, busy }: Props) {
 
       <div className="section">
         <div className="section-title">
-          <h3>2. Pick your position</h3>
+          <h2>2. Pick your position</h2>
           <span>Each position has its own {meta.criteria} criteria</span>
         </div>
         <div className="choice-grid">
@@ -134,7 +134,7 @@ export function Home({ meta, onStart, onDaily, busy }: Props) {
 
       <div className="section">
         <div className="section-title">
-          <h3>3. Pick your era</h3>
+          <h2>3. Pick your era</h2>
           <span>Who shows up on the reel</span>
         </div>
         <div className="choice-grid">
@@ -168,12 +168,13 @@ export function Home({ meta, onStart, onDaily, busy }: Props) {
 
       <div className="section">
         <div className="section-title">
-          <h3>4. Name your player</h3>
+          <h2>4. Name your player</h2>
           <span>Optional — we'll call them "Your Player" otherwise</span>
         </div>
         <div className="name-row">
           <input
             className="text-input"
+            aria-label="Your player's name"
             placeholder="Your player's name"
             value={name}
             maxLength={28}

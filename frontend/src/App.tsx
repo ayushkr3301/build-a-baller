@@ -258,7 +258,7 @@ export default function App() {
         </div>
       )}
 
-      {body()}
+      <main className="app-main">{body()}</main>
     </div>
   )
 }
