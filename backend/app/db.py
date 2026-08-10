@@ -108,6 +108,8 @@ CREATE TABLE IF NOT EXISTS runs (
     mode          TEXT,
     daily_date    TEXT,
     player_token  TEXT,
+    regret        INTEGER,
+    perfect       INTEGER,
     state         TEXT NOT NULL,
     season        TEXT
 );
@@ -125,12 +127,15 @@ DENORMALISED_COLUMNS = (
     ("mode", "TEXT"),
     ("daily_date", "TEXT"),
     ("player_token", "TEXT"),
+    ("regret", "INTEGER"),
+    ("perfect", "INTEGER"),
 )
 
 # Columns the hall of fame actually reads. Never SELECT *, or `season` comes too.
 HOF_COLUMNS = (
     "id, player_name, position, era, overall, club_id, club_name, grade, goals,"
-    " assists, clean_sheets, league_pos, avg_rating, completed_at, awards, mode"
+    " assists, clean_sheets, league_pos, avg_rating, completed_at, awards, mode,"
+    " regret, perfect"
 )
 
 
@@ -398,6 +403,46 @@ def save_season(run_id: str, state: dict, season: dict) -> None:
                 run_id,
             ),
         )
+
+
+def save_build_result(run_id: str, regret: int, perfect: bool) -> None:
+    """Record how far the finished card fell short of the best one available.
+
+    Stored rather than recomputed because the perfect-card solver walks 4096
+    subsets, and this is read on every leaderboard row and personal-best lookup.
+    """
+    with cursor() as cur:
+        cur.execute(
+            _sql("UPDATE runs SET regret = ?, perfect = ? WHERE id = ?"),
+            (regret, 1 if perfect else 0, run_id),
+        )
+
+
+def player_records(player_token: str) -> dict:
+    """A player's lifetime daily record: perfects, and how close they've come.
+
+    Daily runs only. Practice is unlimited retries at one seed, so counting it
+    would make the personal best meaningless.
+    """
+    with cursor() as cur:
+        cur.execute(
+            _sql(
+                "SELECT COUNT(*) AS played,"
+                " SUM(CASE WHEN perfect = 1 THEN 1 ELSE 0 END) AS perfects,"
+                " MIN(regret) AS best_regret,"
+                " MAX(overall) AS best_overall"
+                " FROM runs WHERE player_token = ? AND mode = 'daily'"
+                " AND regret IS NOT NULL"
+            ),
+            (player_token,),
+        )
+        row = _row_to_dict(cur.fetchone()) or {}
+    return {
+        "dailies_built": row.get("played") or 0,
+        "perfects": row.get("perfects") or 0,
+        "best_regret": row.get("best_regret"),
+        "best_overall": row.get("best_overall"),
+    }
 
 
 def get_run(run_id: str) -> dict | None:

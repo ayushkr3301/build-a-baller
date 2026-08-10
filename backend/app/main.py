@@ -158,9 +158,11 @@ def _best_possible(state: dict) -> dict | None:
         return None
     overall, picks = game.best_possible_board(state["position"], players)
     board = _board(state)
+    regret = max(0, overall - board.overall)
     return {
         "overall": overall,
-        "regret": max(0, overall - board.overall),
+        "regret": regret,
+        "perfect": regret == 0 and board.complete,
         "picks": picks,
         "players_seen": len(players),
     }
@@ -177,6 +179,7 @@ def _share_payload(row, state: dict) -> dict | None:
     best = _best_possible(state) or {"overall": 0, "picks": {}}
     grid = daily_mode.result_grid(state["position"], state["board"], best["picks"])
     board = _board(state)
+    perfect = bool(best.get("perfect"))
     streak = 0
     if state.get("mode") == "daily" and row["player_token"]:
         streak = daily_mode.streak_from_dates(db.daily_history(row["player_token"]))
@@ -194,7 +197,9 @@ def _share_payload(row, state: dict) -> dict | None:
             grid=grid,
             optimum=best["overall"],
             streak=streak,
+            perfect=perfect,
         ),
+        "perfect": perfect,
     }
 
 
@@ -420,6 +425,7 @@ def daily(player_token: str | None = None) -> dict:
         "day_number": daily_mode.day_number(setup["date"]),
         "streak": daily_mode.streak_from_dates(history),
         "days_played": len(history),
+        "records": db.player_records(player_token) if player_token else None,
         "leaderboard": db.daily_leaderboard(setup["date"]),
     }
 
@@ -545,6 +551,7 @@ def take(run_id: str, body: TakeAttribute) -> dict:
     _advance(state, board)
 
     db.save_state(run_id, state, overall=board.overall if board.complete else None)
+    _record_build(run_id, state, board)
     return _public(db.get_run(run_id), state)
 
 
@@ -572,6 +579,7 @@ def skip(run_id: str) -> dict:
     _advance(state, board)
 
     db.save_state(run_id, state, overall=board.overall if board.complete else None)
+    _record_build(run_id, state, board)
     return _public(db.get_run(run_id), state)
 
 
@@ -579,6 +587,18 @@ def _advance(state: dict, board: game.Board) -> None:
     """Move out of the build phase once the board is full or the spins run out."""
     if board.complete or state["spin_index"] >= N_SPINS:
         state["phase"] = "built"
+
+
+def _record_build(run_id: str, state: dict, board: game.Board) -> None:
+    """Score the finished card against the best one those players could have made."""
+    if state["phase"] == "building":
+        return
+    players = game.players_by_ids(state["era"], state["position"], state.get("seen_ids", []))
+    if not players:
+        return
+    optimum, _ = game.best_possible_board(state["position"], players)
+    regret = max(0, optimum - board.overall)
+    db.save_build_result(run_id, regret, regret == 0 and board.complete)
 
 
 @app.post("/api/runs/{run_id}/veto")

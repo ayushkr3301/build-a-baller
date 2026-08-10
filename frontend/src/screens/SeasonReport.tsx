@@ -113,7 +113,9 @@ export function SeasonReport({ run, meta, onRestart, onHallOfFame, onPractice, b
   }, [shownHeadlines, season.headlines.length])
 
   // A trophy or a title deserves confetti.
-  const wonSomething = season.awards.some((a) => a.you_won) || season.club.position === 1
+  const perfectCard = run.best_possible?.perfect ?? false
+  const wonSomething =
+    perfectCard || season.awards.some((a) => a.you_won) || season.club.position === 1
   const [burst, setBurst] = useState(0)
   useEffect(() => {
     if (!wonSomething) return
@@ -140,6 +142,7 @@ export function SeasonReport({ run, meta, onRestart, onHallOfFame, onPractice, b
             club={season.club.name}
             era={run.era}
             animate
+            perfect={perfectCard}
           />
         </div>
 

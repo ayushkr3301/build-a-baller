@@ -80,7 +80,26 @@ export function Daily({ onPlay, onResume, onPractice, busy }: Props) {
               <b>{info.days_played}</b>
               <span>Days played</span>
             </div>
+            <div className={`streak${(info.records?.perfects ?? 0) > 0 ? ' streak-win' : ''}`}>
+              <b>{info.records?.perfects ?? 0}</b>
+              <span>Perfect cards</span>
+            </div>
           </div>
+
+          {info.records && info.records.dailies_built > 0 && (
+            <p className="hint record-line">
+              {info.records.best_regret === 0 ? (
+                <>
+                  You've built a perfect card. Only about 2% of runs do.
+                </>
+              ) : (
+                <>
+                  Closest you've come: <b>{info.records.best_regret} off perfect</b>. Take
+                  everything the hand allows and the grid goes all green.
+                </>
+              )}
+            </p>
+          )}
 
           {info.already_played ? (
             <div className="daily-done">

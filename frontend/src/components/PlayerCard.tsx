@@ -15,6 +15,8 @@ interface Props {
   blank?: boolean
   /** Count the stats up on mount. Off for the always-visible build preview. */
   animate?: boolean
+  /** The card extracted everything the hand allowed. */
+  perfect?: boolean
 }
 
 const Silhouette = () => (
@@ -38,6 +40,7 @@ export function PlayerCard({
   era,
   blank = false,
   animate = false,
+  perfect = false,
 }: Props) {
   const tilt = useTilt(11)
 
@@ -54,7 +57,8 @@ export function PlayerCard({
       onPointerMove={tilt.onPointerMove}
       onPointerLeave={tilt.onPointerLeave}
     >
-      <div className={`fut-card ${cls}`}>
+      <div className={`fut-card ${cls}${perfect ? ' fut-perfect' : ''}`}>
+        {perfect && <div className="perfect-stamp">Perfect</div>}
         <div className="fut-holo" aria-hidden="true" />
         <div className="fut-glare" aria-hidden="true" />
 

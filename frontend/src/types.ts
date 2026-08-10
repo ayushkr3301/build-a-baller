@@ -254,7 +254,15 @@ export interface DailyShare {
   day_number: number
   grid: string
   practice: boolean
+  perfect: boolean
   text: string
+}
+
+export interface PlayerRecords {
+  dailies_built: number
+  perfects: number
+  best_regret: number | null
+  best_overall: number | null
 }
 
 export interface HallOfFameEntry {
@@ -283,6 +291,7 @@ export interface HallOfFameEntry {
 export interface BestPossible {
   overall: number
   regret: number
+  perfect: boolean
   players_seen: number
   picks: Record<string, { value: number; player: string }>
 }
@@ -300,6 +309,7 @@ export interface DailyInfo {
   attempt: { id: string; phase: string; overall: number | null; grade: string | null } | null
   streak: number
   days_played: number
+  records: PlayerRecords | null
   leaderboard: {
     player_name: string
     overall: number

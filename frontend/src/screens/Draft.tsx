@@ -69,6 +69,7 @@ export function Draft({ run, meta, onVeto, onDraft, onSimulate, busy }: Props) {
       cardLabel={run.card.card_label}
       club={run.club?.name}
       era={run.era}
+      perfect={run.best_possible?.perfect ?? false}
     />
   )
 
@@ -197,6 +198,19 @@ export function Draft({ run, meta, onVeto, onDraft, onSimulate, busy }: Props) {
               })}
             </div>
           </div>
+
+          {run.best_possible?.perfect && (
+            <div className="panel win-panel">
+              <div className="panel-head">
+                <h3>🏆 Perfect card</h3>
+                <span>~2% of runs</span>
+              </div>
+              <p className="hint">
+                No assignment of those {run.best_possible.players_seen} players scores higher than{' '}
+                <b>{run.overall}</b>. You took everything the hand allowed.
+              </p>
+            </div>
+          )}
 
           {run.best_possible && run.best_possible.regret > 0 && (
             <div className="panel regret-panel">

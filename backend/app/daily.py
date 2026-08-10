@@ -67,16 +67,18 @@ def share_text(
     grid: str,
     optimum: int,
     streak: int,
+    perfect: bool = False,
 ) -> str:
     lines = [
         f"\u26bd Build A Baller \u2014 Day {day_number(day)}",
         f"{position_name} \u00b7 {era_name} \u00b7 {overall} OVR ({grade})",
         grid,
     ]
-    if optimum > overall:
-        lines.append(f"Perfect play was {optimum}. I left {optimum - overall} on the table.")
+    if perfect:
+        # The win. Rare enough (~2%) that it deserves the top line, not a footnote.
+        lines.append("\U0001f3c6 PERFECT \u2014 nothing left on the table")
     else:
-        lines.append("Perfect card. Nothing left on the table.")
+        lines.append(f"Perfect play was {optimum}. I left {optimum - overall} on the table.")
     if streak > 1:
         lines.append(f"\U0001f525 {streak} day streak")
     lines += ["", "build-a-baller.vercel.app"]

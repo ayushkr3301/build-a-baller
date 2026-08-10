@@ -2,6 +2,7 @@
 
 import importlib
 import os
+import random
 import tempfile
 
 import pytest
@@ -238,3 +239,108 @@ def test_season_runs_have_no_share_block(client):
     }).json()
     state = finish(client, build_out(client, run))
     assert state["share"] is None
+
+
+# --------------------------------------------------------------------------- #
+# Winning
+# --------------------------------------------------------------------------- #
+
+
+def test_a_finished_build_records_its_regret(client):
+    run = client.post("/api/runs", json={
+        "player_name": "R", "position": "ST", "era": "current", "mode": "season",
+    }).json()
+    state = build_out(client, run)
+    best = state["best_possible"]
+    assert best is not None
+    assert best["regret"] >= 0
+    assert best["perfect"] is (best["regret"] == 0)
+
+
+def test_the_share_text_announces_a_win_only_when_it_is_one(client):
+    """PERFECT and the all-green grid must agree with the recorded regret."""
+    run = client.post("/api/runs", json={
+        "player_name": "Winner", "position": "ST", "era": "current",
+        "mode": "daily", "player_token": "tok-perfect",
+    }).json()
+    finished = finish(client, build_out(client, run))
+    share, best = finished["share"], finished["best_possible"]
+
+    if best["perfect"]:
+        assert "PERFECT" in share["text"]
+        assert set(share["grid"]) == {daily.GREEN}, "a win must be all green"
+    else:
+        assert "PERFECT" not in share["text"]
+        assert "on the table" in share["text"]
+        assert daily.GREEN * len(share["grid"]) != share["grid"]
+
+
+def test_personal_records_track_the_closest_ever_run(client):
+    token = "tok-records"
+    run = client.post("/api/runs", json={
+        "player_name": "Tracker", "position": "ST", "era": "current",
+        "mode": "daily", "player_token": token,
+    }).json()
+    finish(client, build_out(client, run))
+
+    records = client.get(f"/api/daily?player_token={token}").json()["records"]
+    assert records["dailies_built"] == 1
+    assert records["best_regret"] is not None
+    assert records["perfects"] in (0, 1)
+    assert records["best_overall"] > 0
+
+
+def test_practice_never_counts_toward_the_record(client):
+    """Otherwise the personal best is just whoever replayed one seed the most."""
+    token = "tok-nograind"
+    practice = client.post("/api/runs", json={
+        "player_name": "Grinder", "position": "ST", "era": "current",
+        "mode": "practice", "player_token": token,
+    }).json()
+    finish(client, build_out(client, practice))
+
+    records = client.get(f"/api/daily?player_token={token}").json()["records"]
+    assert records["dailies_built"] == 0
+    assert records["perfects"] == 0
+    assert records["best_regret"] is None
+
+
+def test_a_genuinely_perfect_card_wins():
+    """Build the optimum on purpose, rather than waiting for a ~2% event.
+
+    Draws a real hand, asks the solver for the best assignment, then plays exactly
+    that -- so the win path is exercised for real instead of asserted about.
+    """
+    from app.game import Board, best_possible_board, draw_player
+    from app.data.attributes import N_SPINS, overall_from
+
+    rng = random.Random(11)
+    seen: set[str] = set()
+    players = []
+    for index in range(N_SPINS):
+        player = draw_player("legends", "ST", index, rng, seen)
+        seen.add(player.id)
+        players.append(player)
+
+    optimum, picks = best_possible_board("ST", players)
+    by_name = {p.name: p for p in players}
+
+    board = Board(position="ST")
+    for key, pick in picks.items():
+        board.take(key, by_name[pick["player"]])
+
+    assert board.complete
+    assert board.overall == optimum, "playing the solver's own answer must hit the optimum"
+
+    grid = daily.result_grid("ST", board.slots, picks)
+    assert set(grid) == {daily.GREEN}, "a perfect card is all green"
+
+    text = daily.share_text(
+        day="2026-08-15", position_name="Striker / Forward", era_name="All-Time Legends",
+        overall=board.overall, grade="A+", grid=grid, optimum=optimum, streak=3, perfect=True,
+    )
+    assert "PERFECT" in text
+    # The winning line reads "nothing left on the table", so check for the
+    # *losing* phrasing specifically rather than the shared words.
+    assert "I left" not in text
+    assert overall_from("ST", {k: v for k, v in board.slots.items()}) == optimum

@@ -31,7 +31,10 @@ export function DailyShare({ share, regret, onPractice, busy }: Props) {
   return (
     <div className="panel share-daily">
       <div className="panel-head">
-        <h3>{share.practice ? 'Practice result' : `Day ${share.day_number}`}</h3>
+        <h3>
+          {share.perfect && <span className="win-flag">🏆 Perfect</span>}
+          {share.practice ? 'Practice result' : `Day ${share.day_number}`}
+        </h3>
         <span>
           {share.practice
             ? 'Not counted — practice never touches the board'
@@ -46,6 +49,12 @@ export function DailyShare({ share, regret, onPractice, busy }: Props) {
           </span>
         ))}
       </div>
+
+      {share.perfect && (
+        <p className="win-line">
+          You took everything the hand allowed. About 2% of runs manage it.
+        </p>
+      )}
 
       <p className="hint share-legend">
         <span>🟩 free</span>
