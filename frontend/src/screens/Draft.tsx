@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 
+import { ClubBadge } from '../components/Emblems'
 import { PlayerCard } from '../components/PlayerCard'
 import { Stepper } from '../components/Stepper'
 import type { Meta, Run } from '../types'
@@ -84,6 +85,14 @@ export function Draft({ run, meta, onVeto, onDraft, onSimulate, busy }: Props) {
           <div>
             <div className="signed-banner">
               <div className="eyebrow">Signed, sealed</div>
+              <div className="signed-crest">
+                <ClubBadge
+                  primary={club.primary}
+                  secondary={club.secondary}
+                  short={club.short}
+                  size={44}
+                />
+              </div>
               <div className="club-name" style={{ color: club.primary }}>
                 {club.name}
               </div>

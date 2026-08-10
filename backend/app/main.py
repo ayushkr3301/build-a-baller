@@ -220,6 +220,8 @@ def _career_payload(state: dict) -> dict | None:
         "caps": data["caps"],
         "international_goals": data["international_goals"],
         "retired": data["retired"],
+        "is_captain": data.get("is_captain", False),
+        "is_focal": data.get("is_focal", False),
         "seasons": data["seasons"],
         "honours": data["honours"],
         "ballon_dor": data["ballon_dor"],

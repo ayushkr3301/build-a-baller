@@ -2466,6 +2466,54 @@ table.data .num {
   color: #ffe27a;
 }
 
+/* Emblems (trophies, Ballon d'Or, club crests) sit inline with their label. */
+.club-line,
+.dash-club,
+.cell-club,
+.honour-name,
+.icon-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.dash-club {
+  display: flex;
+}
+
+.honour-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.honour-chip svg,
+.icon-chip svg,
+.cell-club svg,
+.club-line svg,
+.dash-club svg,
+.honour-name svg {
+  flex: none;
+}
+
+.signed-crest {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 8px;
+}
+
+.role-badge {
+  margin-left: 4px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  background: rgba(255, 226, 122, 0.16);
+  border: 1px solid rgba(255, 226, 122, 0.45);
+  color: #ffe27a;
+}
+
 .honours-list {
   display: grid;
   gap: 6px;

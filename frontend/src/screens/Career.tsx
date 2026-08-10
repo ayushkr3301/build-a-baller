@@ -1,6 +1,8 @@
 import { useState } from 'react'
 
 import { Celebration } from '../components/Celebration'
+import { BallonDor, ClubBadge, Emblem, useClubLook } from '../components/Emblems'
+import type { ClubColors } from '../components/Emblems'
 import { PlayerCard } from '../components/PlayerCard'
 import { play, useCountUp } from '../lib/motion'
 import type { AttributeMeta, CareerSeason, Meta, Run } from '../types'
@@ -39,6 +41,7 @@ export function Career({ run, meta, onStart, onChoose, onContinue, onRestart, bu
   const [nationality, setNationality] = useState('eng')
   const attributes: AttributeMeta[] =
     meta.positions.find((p) => p.key === run.position)?.attributes ?? []
+  const look = useClubLook(meta)
   const career = run.career
 
   // ------------------------------------------------------------------ setup
@@ -125,8 +128,10 @@ export function Career({ run, meta, onStart, onChoose, onContinue, onRestart, bu
             {career.nationality}
           </div>
           <h2>{run.player_name}</h2>
-          <p className="hint">
+          <p className="hint club-line">
+            <ClubBadge {...look(career.club_id, career.club)} size={20} />
             {career.club} · {career.position}
+            {career.is_captain && <span className="role-badge">© Captain</span>}
           </p>
         </div>
         <div className="growth-meter">
@@ -146,7 +151,7 @@ export function Career({ run, meta, onStart, onChoose, onContinue, onRestart, bu
       </div>
 
       {reviewing ? (
-        <SeasonDashboard season={last} busy={busy} onContinue={onContinue} />
+        <SeasonDashboard season={last} look={look} busy={busy} onContinue={onContinue} />
       ) : (
         <div className="panel">
           <div className="panel-head">
@@ -173,7 +178,7 @@ export function Career({ run, meta, onStart, onChoose, onContinue, onRestart, bu
         </div>
       )}
 
-      {career.seasons.length > 0 && <CareerTimeline seasons={career.seasons} />}
+      {career.seasons.length > 0 && <CareerTimeline seasons={career.seasons} look={look} />}
     </div>
   )
 }
@@ -198,10 +203,12 @@ function seasonVerdict(s: CareerSeason): string {
 
 function SeasonDashboard({
   season,
+  look,
   busy,
   onContinue,
 }: {
   season: CareerSeason
+  look: (clubId?: string | null, name?: string) => ClubColors
   busy: boolean
   onContinue: () => Promise<void>
 }) {
@@ -215,7 +222,8 @@ function SeasonDashboard({
   return (
     <div className="panel season-dash">
       <div className="panel-head">
-        <h3>
+        <h3 className="dash-club">
+          <ClubBadge {...look(season.club_id, season.club)} size={22} />
           {season.year} · {season.club}
           {season.on_loan && <span className="loan-badge">on loan</span>}
         </h3>
@@ -255,11 +263,12 @@ function SeasonDashboard({
         <div className="recap-notes">
           {season.trophies.map((t) => (
             <span className="honour-chip" key={t}>
-              🏆 {t}
+              <Emblem name={t} size={16} /> {t}
             </span>
           ))}
           {season.europe && !season.europe.won && (
-            <span className="chip">
+            <span className="chip icon-chip">
+              <Emblem name={season.europe.competition} size={15} />
               {season.europe.competition}: {season.europe.reached}
               {season.europe.goals > 0 ? ` · ${season.europe.goals}g` : ''}
             </span>
@@ -274,8 +283,9 @@ function SeasonDashboard({
             </span>
           )}
           {season.ballon_dor_rank <= 30 && (
-            <span className={`chip${season.ballon_dor_rank === 1 ? ' chip-gold' : ''}`}>
-              {season.ballon_dor_rank === 1 ? '🥇 Ballon d’Or winner' : `Ballon d'Or #${season.ballon_dor_rank}`}
+            <span className={`chip icon-chip${season.ballon_dor_rank === 1 ? ' chip-gold' : ''}`}>
+              <BallonDor size={15} />
+              {season.ballon_dor_rank === 1 ? 'Ballon d’Or winner' : `Ballon d'Or #${season.ballon_dor_rank}`}
             </span>
           )}
         </div>
@@ -296,7 +306,13 @@ function ordinal(n: number): string {
   return `${n}${['th', 'st', 'nd', 'rd'][n % 10] ?? 'th'}`
 }
 
-function CareerTimeline({ seasons }: { seasons: CareerSeason[] }) {
+function CareerTimeline({
+  seasons,
+  look,
+}: {
+  seasons: CareerSeason[]
+  look: (clubId?: string | null, name?: string) => ClubColors
+}) {
   return (
     <div className="panel">
       <div className="panel-head">
@@ -327,7 +343,10 @@ function CareerTimeline({ seasons }: { seasons: CareerSeason[] }) {
                   <td>{s.year}</td>
                   <td style={{ color: 'var(--muted-dim)' }}>{s.age}</td>
                   <td>
-                    {s.club}
+                    <span className="cell-club">
+                      <ClubBadge {...look(s.club_id, s.club)} size={17} />
+                      {s.club}
+                    </span>
                     {s.on_loan && <span className="loan-badge">loan</span>}
                   </td>
                   <td className="num">
@@ -352,6 +371,7 @@ function CareerTimeline({ seasons }: { seasons: CareerSeason[] }) {
 function CareerReport({ run, meta, onRestart }: { run: Run; meta: Meta; onRestart: () => void }) {
   const career = run.career!
   const s = career.summary!
+  const look = useClubLook(meta)
   const attributes = meta.positions.find((p) => p.key === run.position)?.attributes ?? []
 
   return (
@@ -413,7 +433,9 @@ function CareerReport({ run, meta, onRestart }: { run: Run; meta: Meta; onRestar
             <div className="honours-list">
               {s.honours.map((h) => (
                 <div className="honour-row" key={h.trophy}>
-                  <span>🏆 {h.trophy}</span>
+                  <span className="honour-name">
+                    <Emblem name={h.trophy} size={20} /> {h.trophy}
+                  </span>
                   <b>×{h.count}</b>
                 </div>
               ))}
@@ -421,7 +443,9 @@ function CareerReport({ run, meta, onRestart }: { run: Run; meta: Meta; onRestar
           )}
           {s.ballon_dor_wins > 0 && (
             <div className="honour-row gold-row">
-              <span>🥇 Ballon d'Or</span>
+              <span className="honour-name">
+                <BallonDor size={20} /> Ballon d'Or
+              </span>
               <b>×{s.ballon_dor_wins}</b>
             </div>
           )}
@@ -446,7 +470,9 @@ function CareerReport({ run, meta, onRestart }: { run: Run; meta: Meta; onRestar
           <div className="honours-list">
             {s.clubs.map((c) => (
               <div className="honour-row" key={c.club}>
-                <span>{c.club}</span>
+                <span className="honour-name">
+                  <ClubBadge {...look(undefined, c.club)} size={18} /> {c.club}
+                </span>
                 <b>
                   {c.years} {c.years === 1 ? 'season' : 'seasons'}
                 </b>
@@ -461,7 +487,7 @@ function CareerReport({ run, meta, onRestart }: { run: Run; meta: Meta; onRestar
         </div>
       </div>
 
-      <CareerTimeline seasons={career.seasons} />
+      <CareerTimeline seasons={career.seasons} look={look} />
 
       <div className="btn-row" style={{ marginTop: 30, justifyContent: 'center' }}>
         <button className="btn btn-primary" onClick={onRestart}>

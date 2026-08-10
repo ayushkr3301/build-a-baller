@@ -325,14 +325,20 @@ def decision_options(state: dict, rng: random.Random) -> list[dict]:
             )
         )
 
-    # Star at a big club: become the guaranteed starter.
+    # Star at a big club: become (or stay) the guaranteed starter. Offered on the
+    # same terms whether or not you already hold the role -- the text just stops
+    # "demanding" something you already have -- so the tuned balance is unchanged.
     if tier <= 1 and played_a_lot and overall >= 78:
+        already_focal = state.get("is_focal", False)
         options.append(
             Option(
                 id="talisman",
-                title="Demand to be the focal point",
+                title="Renew as the talisman" if already_focal else "Demand to be the focal point",
                 detail=(
-                    "Sign a new deal as the side's main man. Every minute is yours, "
+                    "Re-sign as the team's main man for another year -- every minute, "
+                    "every spotlight, still yours."
+                    if already_focal
+                    else "Sign a new deal as the side's main man. Every minute is yours, "
                     "and so is every bit of blame."
                 ),
                 club_id=club_id,
@@ -420,10 +426,26 @@ def _event_options(
         choices = [c for c in pool if c.id not in exclude]
         return flavour.choice(choices) if choices else None
 
+    # Consecutive seasons at the current club (loans don't count as settling in).
+    tenure = 0
+    for s in reversed(state["seasons"]):
+        if s.get("club_id") == club_id and not s.get("on_loan"):
+            tenure += 1
+        else:
+            break
+
     events: list[Option] = []
 
-    # The armband: a settled senior pro at a club that plays them.
-    if seasons >= 2 and played_a_lot and 23 <= age <= 34 and tier <= 2:
+    # The armband: a settled senior pro who has been here a while and isn't already
+    # wearing it. Tenure is at *this* club, so a new signing isn't handed it, and a
+    # captain is never asked to become captain again.
+    if (
+        not state.get("is_captain")
+        and tenure >= 2
+        and played_a_lot
+        and 23 <= age <= 34
+        and tier <= 2
+    ):
         events.append(
             Option(
                 id="captain",
@@ -460,8 +482,9 @@ def _event_options(
                 )
             )
 
-    # Drop down and be the hero of a club fighting the drop.
-    if overall >= 74 and age <= 33 and tier <= 2:
+    # Drop down and be the hero of a club fighting the drop -- only worth offering
+    # when you're actually at a good club to leave.
+    if overall >= 74 and age <= 33 and tier <= 1 and not state.get("is_focal"):
         target = pick(ranked[-6:], {club_id})
         if target:
             events.append(
@@ -517,8 +540,8 @@ def _event_options(
             )
         )
 
-    # A veteran's last adventure.
-    if age >= 31 and tier <= 2:
+    # A veteran's last adventure -- but not two summers running.
+    if age >= 31 and tier <= 2 and state.get("last_option_id") != "swansong":
         target = pick(ranked[6:14], {club_id})
         if target:
             events.append(
@@ -869,6 +892,11 @@ def new_career(
         "goal_share": 0.0,
         "assist_share": 0.0,
         "retrained": [],
+        # Status is tied to the current shirt, so the summer menu can stop
+        # offering you a role you already hold.
+        "is_captain": False,
+        "is_focal": False,
+        "last_option_id": "stay",
     }
 
 
@@ -885,12 +913,27 @@ def play_year(state: dict, option_id: str, rng: random.Random) -> dict:
     if chosen.get("retrain"):
         retrain(state, chosen["retrain"], rng)
 
+    state.setdefault("is_captain", False)
+    state.setdefault("is_focal", False)
+
     on_loan = bool(chosen.get("loan"))
     parent_club = state["club_id"]
     if chosen.get("club_id") and chosen["club_id"] != state["club_id"]:
         state["club_id"] = chosen["club_id"]
         if chosen["club_id"] not in state["clubs_played_for"]:
             state["clubs_played_for"].append(chosen["club_id"])
+
+    # Status is worn with the shirt: move on and you arrive a regular again, and
+    # you only keep the armband or the focal role by staying where you are.
+    option_id = chosen.get("id", "stay")
+    if state["club_id"] != parent_club:
+        state["is_captain"] = False
+        state["is_focal"] = False
+    if option_id == "captain":
+        state["is_captain"] = True
+    elif option_id in ("talisman", "rescue"):
+        state["is_focal"] = True
+    state["last_option_id"] = option_id
 
     state["opportunity"] = chosen.get("opportunity", 1.0)
     state["growth_modifier"] = chosen.get("growth_modifier", 1.0)

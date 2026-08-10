@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 
 import { Celebration } from '../components/Celebration'
+import { ClubBadge, useClubLook } from '../components/Emblems'
 import { DailyShare } from '../components/DailyShare'
 import { PlayerCard } from '../components/PlayerCard'
 import { ShareCard } from '../components/ShareCard'
@@ -98,6 +99,7 @@ export function SeasonReport({ run, meta, onRestart, onHallOfFame, onPractice, b
   const [tab, setTab] = useState<Tab>('season')
   const season = run.season!
   const p = season.player
+  const look = useClubLook(meta)
   const attributes = meta.positions.find((k) => k.key === run.position)?.attributes ?? []
   const isKeeper = run.position === 'GK'
   const isDefensive = run.position === 'GK' || run.position === 'DEF'
@@ -152,7 +154,8 @@ export function SeasonReport({ run, meta, onRestart, onHallOfFame, onPractice, b
             <div style={{ flex: 1, minWidth: 240 }}>
               <div className="eyebrow">Season verdict</div>
               <h2 style={{ fontSize: 34 }}>{season.verdict}</h2>
-              <p className="hint" style={{ marginTop: 8 }}>
+              <p className="hint club-line" style={{ marginTop: 8 }}>
+                <ClubBadge {...look(season.club.id, season.club.name)} size={20} />
                 {season.club.name} · finished {ordinal(season.club.position)} on{' '}
                 {season.club.points} pts · {season.club.qualification}
               </p>
@@ -316,7 +319,12 @@ export function SeasonReport({ run, meta, onRestart, onHallOfFame, onPractice, b
                       <i className={`zone ${zoneClass(r.position)}`} />
                       {r.position}
                     </td>
-                    <td>{r.club}</td>
+                    <td>
+                      <span className="cell-club">
+                        <ClubBadge {...look(r.club_id, r.club)} size={17} />
+                        {r.club}
+                      </span>
+                    </td>
                     <td className="num">{r.played}</td>
                     <td className="num">{r.won}</td>
                     <td className="num">{r.drawn}</td>

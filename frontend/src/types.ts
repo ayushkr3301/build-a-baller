@@ -338,6 +338,7 @@ export interface CareerSeason {
   year: number
   age: number
   club: string
+  club_id: string
   on_loan: boolean
   decision: string
   league_position: number
@@ -399,6 +400,8 @@ export interface CareerState {
   caps: number
   international_goals: number
   retired: boolean
+  is_captain: boolean
+  is_focal: boolean
   seasons: CareerSeason[]
   honours: { year: number; trophy: string; club: string }[]
   ballon_dor: { year: number; rank: number }[]

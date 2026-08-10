@@ -106,6 +106,78 @@ def test_growth_is_not_so_generous_that_everyone_maxes_out():
 
 
 # --------------------------------------------------------------------------- #
+# Status-aware options
+# --------------------------------------------------------------------------- #
+
+
+def _settled_state(seed=1, age=27):
+    """A senior pro with two full seasons at their starting club."""
+    state = career.new_career(
+        name="Skipper", position="ST", era="legends", nationality="eng",
+        potential_ratings=STRIKER, seed=seed,
+    )
+    club_id = state["club_id"]
+    state["age"] = age
+    state["overall"] = 82
+    state["seasons"] = [
+        {"club_id": club_id, "on_loan": False, "apps": 30, "avg_rating": 7.0},
+        {"club_id": club_id, "on_loan": False, "apps": 30, "avg_rating": 7.0},
+    ]
+    return state, club_id
+
+
+def test_a_captain_is_never_asked_to_become_captain_again():
+    """Regression: the armband was offered every summer, even to the current captain."""
+    state, club_id = _settled_state()
+    tier = career._club_tier(club_id)
+    ranked = career.clubs_by_rank()
+
+    offered = {o.id for o in career._event_options(state, random.Random(0), tier, True, ranked)}
+    assert "captain" in offered, "a settled senior pro should be offered the armband"
+
+    state["is_captain"] = True
+    after = {o.id for o in career._event_options(state, random.Random(0), tier, True, ranked)}
+    assert "captain" not in after, "a captain should not be asked to captain again"
+
+
+def test_the_armband_needs_real_tenure_not_just_a_long_career():
+    """A player who only just signed is not handed the captaincy on day one."""
+    state, old_club = _settled_state()
+    new_club = next(c.id for c in career.clubs_by_rank() if c.id != old_club)
+    # Long career, but the two recent seasons were somewhere else.
+    state["club_id"] = new_club
+    tier = career._club_tier(new_club)
+    ranked = career.clubs_by_rank()
+    offered = {o.id for o in career._event_options(state, random.Random(0), tier, True, ranked)}
+    assert "captain" not in offered, "captaincy requires seasons at *this* club"
+
+
+def test_status_is_shed_when_you_change_clubs():
+    state, old_club = _settled_state()
+    state["is_captain"] = True
+    state["is_focal"] = True
+    other = next(c.id for c in career.clubs_by_rank() if c.id != old_club)
+    state["_options"] = {
+        "move": {"id": "move", "club_id": other, "opportunity": 1.0, "growth_modifier": 1.0,
+                 "wage": 1.0, "retrain": None, "loan": False, "title": "Move on"},
+    }
+    career.play_year(state, "move", random.Random(3))
+    assert state["is_captain"] is False, "you are not the new club's captain on arrival"
+    assert state["is_focal"] is False
+
+
+def test_staying_keeps_the_armband():
+    state, club_id = _settled_state()
+    state["is_captain"] = True
+    state["_options"] = {
+        "stay": {"id": "stay", "club_id": club_id, "opportunity": 1.0, "growth_modifier": 1.0,
+                 "wage": 1.0, "retrain": None, "loan": False, "title": "Stay"},
+    }
+    career.play_year(state, "stay", random.Random(3))
+    assert state["is_captain"] is True, "staying put keeps the captaincy"
+
+
+# --------------------------------------------------------------------------- #
 # Retraining
 # --------------------------------------------------------------------------- #
 

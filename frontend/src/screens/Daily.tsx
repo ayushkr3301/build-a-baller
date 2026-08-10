@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
 
 import { api } from '../api'
-import type { DailyInfo } from '../types'
+import { ClubBadge, useClubLook } from '../components/Emblems'
+import type { DailyInfo, Meta } from '../types'
 
 interface Props {
+  meta: Meta
   onPlay: (name: string) => void
   onResume: (runId: string) => void
   onPractice: () => void
@@ -16,10 +18,11 @@ function countdown(seconds: number): string {
   return `${h}h ${m}m`
 }
 
-export function Daily({ onPlay, onResume, onPractice, busy }: Props) {
+export function Daily({ meta, onPlay, onResume, onPractice, busy }: Props) {
   const [info, setInfo] = useState<DailyInfo | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [name, setName] = useState('')
+  const look = useClubLook(meta)
 
   useEffect(() => {
     let live = true
@@ -198,7 +201,16 @@ export function Daily({ onPlay, onResume, onPractice, busy }: Props) {
                       <td className="num">
                         <span className="ovr-cell">{row.overall}</span>
                       </td>
-                      <td style={{ color: 'var(--muted)' }}>{row.club_name ?? '—'}</td>
+                      <td style={{ color: 'var(--muted)' }}>
+                        {row.club_name ? (
+                          <span className="cell-club">
+                            <ClubBadge {...look(undefined, row.club_name)} size={16} />
+                            {row.club_name}
+                          </span>
+                        ) : (
+                          '—'
+                        )}
+                      </td>
                       <td className="num">{row.goals}</td>
                       <td className="num">{row.assists}</td>
                       <td>

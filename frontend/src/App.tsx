@@ -124,7 +124,13 @@ export default function App() {
     if (view === 'hof') return <HallOfFame onBack={() => setView('game')} />
     if (view === 'daily')
       return (
-        <Daily onPlay={startDaily} onResume={resumeRun} onPractice={() => startPractice()} busy={busy} />
+        <Daily
+          meta={meta}
+          onPlay={startDaily}
+          onResume={resumeRun}
+          onPractice={() => startPractice()}
+          busy={busy}
+        />
       )
     if (!run)
       return <Home meta={meta} onStart={start} onDaily={() => setView('daily')} busy={busy} />
