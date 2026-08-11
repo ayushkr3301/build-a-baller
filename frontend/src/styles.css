@@ -12,13 +12,16 @@
   --line-strong: rgba(255, 255, 255, 0.18);
   --text: #e9f2ec;
   --muted: #8ba393;
-  --muted-dim: #5f7568;
+  /* Lifted from #5f7568 (2.7-3.9:1) so small labels clear WCAG AA 4.5:1 on
+     every surface they sit on, while staying a clear step below --muted. */
+  --muted-dim: #7c9084;
   --accent: #3ddc84;
   --accent-dim: #1f8f52;
   --danger: #ff5a5a;
   --warn: #ffc44d;
 
   --gold: #f5d67b;
+  --gold-bright: #ffe27a;
   --silver: #d8dee6;
   --bronze: #c98f5f;
   --icon: #f7e7b6;
@@ -80,6 +83,15 @@ button:disabled {
   cursor: not-allowed;
 }
 
+/* One visible keyboard-focus ring for every interactive control. Keyed to
+   :focus-visible so it shows for keyboard users without ringing on click.
+   .text-input keeps its own accent-border focus treatment (its :focus rule
+   wins on specificity). */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 /* ------------------------------------------------------------------ Layout */
 
 .app {
@@ -106,6 +118,13 @@ button:disabled {
 .app > * {
   position: relative;
   z-index: 1;
+}
+
+/* The <main> landmark is the flex child now; let .page keep filling height. */
+.app-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
 }
 
 @keyframes drift {
@@ -280,7 +299,7 @@ button:disabled {
   margin-bottom: 14px;
 }
 
-.section-title h3 {
+.section-title h2 {
   font-size: 22px;
 }
 
@@ -453,6 +472,19 @@ button:disabled {
   gap: 12px;
   flex-wrap: wrap;
   align-items: center;
+}
+
+/* On touch devices these pill controls are comfortably tappable (44px),
+   while pointer devices keep the tighter desktop sizing. */
+@media (pointer: coarse) {
+  .nav-btn,
+  .tab,
+  .btn-sm {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
 }
 
 /* ------------------------------------------------------------------ FUT card */
@@ -877,7 +909,7 @@ button:disabled {
 }
 
 .v-elite {
-  color: #ffe27a;
+  color: var(--gold-bright);
 }
 .v-great {
   color: var(--accent);
@@ -1329,14 +1361,43 @@ button:disabled {
 }
 
 .bd-fill {
+  /* block, not the span's default inline -- an inline box ignores width and
+     transform, so the fill rendered at zero and the bar looked empty. */
+  display: block;
   height: 100%;
+  width: 100%;
   border-radius: 999px;
   background: linear-gradient(90deg, var(--accent-dim), var(--accent));
-  transition: width 0.9s cubic-bezier(0.2, 0.9, 0.25, 1);
+  /* scaleX reveal rather than animating width: composited, no layout thrash.
+     The inline transform sets the resting scale; grow-x eases it up from 0. */
+  transform-origin: left center;
+  animation: grow-x 0.9s cubic-bezier(0.2, 0.9, 0.25, 1) backwards;
+}
+
+/* Fill bars reveal by scaling a full-width element, so width/height never
+   animate. The resting transform lives inline (scaleX/scaleY of the value). */
+@keyframes grow-x {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+@keyframes grow-y {
+  from {
+    transform: scaleY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bd-fill,
+  .growth-fill,
+  .chart-bar {
+    animation: none;
+  }
 }
 
 .bd-fill.gold {
-  background: linear-gradient(90deg, #b98f3c, #ffe27a);
+  background: linear-gradient(90deg, #b98f3c, var(--gold-bright));
 }
 
 .bd-val {
@@ -1575,7 +1636,6 @@ button:disabled {
   padding: 11px 15px;
   border-radius: 10px;
   background: var(--surface);
-  border-left: 3px solid var(--accent);
   font-size: 14px;
 }
 
@@ -1619,7 +1679,7 @@ button:disabled {
   color: var(--accent);
 }
 .tile.gold b {
-  color: #ffe27a;
+  color: var(--gold-bright);
 }
 
 .two-col {
@@ -1778,7 +1838,7 @@ table.data .num {
 
 .r-hot {
   background: rgba(255, 226, 122, 0.19);
-  color: #ffe27a;
+  color: var(--gold-bright);
 }
 .r-good {
   background: rgba(61, 220, 132, 0.17);
@@ -1876,7 +1936,10 @@ table.data .num {
   width: 100%;
   border-radius: 3px 3px 0 0;
   min-height: 2px;
-  transition: height 0.6s cubic-bezier(0.2, 0.9, 0.25, 1);
+  /* height stays inline to drive the stacked layout; the reveal is a
+     composited scaleY from the baseline instead of a height transition. */
+  transform-origin: bottom;
+  animation: grow-y 0.6s cubic-bezier(0.2, 0.9, 0.25, 1) backwards;
 }
 
 .chart-bar.goals {
@@ -1960,7 +2023,7 @@ table.data .num {
 }
 
 .rank-1 {
-  color: #ffe27a;
+  color: var(--gold-bright);
 }
 .rank-2 {
   color: var(--silver);
@@ -2242,7 +2305,7 @@ table.data .num {
 }
 
 .regret-value.best {
-  color: #ffe27a;
+  color: var(--gold-bright);
 }
 
 .regret-label {
@@ -2282,7 +2345,7 @@ table.data .num {
 }
 
 .regret-swap b.best {
-  color: #ffe27a;
+  color: var(--gold-bright);
 }
 
 .regret-swap small {
@@ -2337,9 +2400,11 @@ table.data .num {
 
 .growth-fill {
   height: 100%;
+  width: 100%;
   border-radius: 999px;
   background: linear-gradient(90deg, var(--accent-dim), var(--accent));
-  transition: width 0.9s cubic-bezier(0.2, 0.9, 0.25, 1);
+  transform-origin: left center;
+  animation: grow-x 0.9s cubic-bezier(0.2, 0.9, 0.25, 1) backwards;
 }
 
 .growth-label {
@@ -2387,7 +2452,7 @@ table.data .num {
 
 .tag-develop { background: rgba(61, 220, 132, 0.18); color: var(--accent); }
 .tag-ambition { background: rgba(106, 169, 255, 0.18); color: #8cc0ff; }
-.tag-money { background: rgba(255, 226, 122, 0.18); color: #ffe27a; }
+.tag-money { background: rgba(255, 226, 122, 0.18); color: var(--gold-bright); }
 .tag-status { background: rgba(255, 122, 122, 0.16); color: #ff9a9a; }
 .tag-longevity { background: rgba(190, 160, 255, 0.16); color: #c6adff; }
 .tag-reinvent { background: rgba(255, 160, 90, 0.16); color: #ffb37a; }
@@ -2420,7 +2485,7 @@ table.data .num {
   border-radius: 999px;
   background: rgba(255, 226, 122, 0.14);
   border: 1px solid rgba(255, 226, 122, 0.4);
-  color: #ffe27a;
+  color: var(--gold-bright);
   font-size: 12px;
 }
 
@@ -2463,7 +2528,7 @@ table.data .num {
 .chip-gold {
   background: rgba(255, 226, 122, 0.16);
   border-color: rgba(255, 226, 122, 0.45);
-  color: #ffe27a;
+  color: var(--gold-bright);
 }
 
 /* Emblems (trophies, Ballon d'Or, club crests) sit inline with their label. */
@@ -2511,7 +2576,7 @@ table.data .num {
   letter-spacing: 0.04em;
   background: rgba(255, 226, 122, 0.16);
   border: 1px solid rgba(255, 226, 122, 0.45);
-  color: #ffe27a;
+  color: var(--gold-bright);
 }
 
 .honours-list {
@@ -2530,7 +2595,7 @@ table.data .num {
 
 .honour-row.gold-row {
   border: 1px solid rgba(255, 226, 122, 0.45);
-  color: #ffe27a;
+  color: var(--gold-bright);
   margin-top: 6px;
 }
 
@@ -2600,7 +2665,7 @@ table.data .num {
 /* ------------------------------------------------------------------ The win */
 
 .fut-perfect {
-  box-shadow: var(--shadow), 0 0 0 2px #ffe27a, 0 0 46px rgba(255, 226, 122, 0.45);
+  box-shadow: var(--shadow), 0 0 0 2px var(--gold-bright), 0 0 46px rgba(255, 226, 122, 0.45);
 }
 
 .perfect-stamp {
@@ -2648,17 +2713,17 @@ table.data .num {
 
 .win-flag {
   margin-right: 10px;
-  color: #ffe27a;
+  color: var(--gold-bright);
 }
 
 .win-line {
   margin: 0 0 12px;
-  color: #ffe27a;
+  color: var(--gold-bright);
   font-size: 14px;
 }
 
 .streak-win b {
-  color: #ffe27a;
+  color: var(--gold-bright);
 }
 
 .record-line {
@@ -2671,7 +2736,7 @@ table.data .num {
   border-radius: 10px;
   border: 1px solid rgba(255, 226, 122, 0.4);
   background: rgba(255, 226, 122, 0.1);
-  color: #ffe27a;
+  color: var(--gold-bright);
 }
 
 .perfect-tag {
@@ -2685,5 +2750,5 @@ table.data .num {
 }
 
 .row-perfect .ovr-cell {
-  color: #ffe27a;
+  color: var(--gold-bright);
 }

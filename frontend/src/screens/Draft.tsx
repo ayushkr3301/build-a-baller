@@ -198,7 +198,7 @@ export function Draft({ run, meta, onVeto, onDraft, onSimulate, busy }: Props) {
                     <span className="bd-bar">
                       <span
                         className={`bd-fill${v >= 88 ? ' gold' : ''}`}
-                        style={{ width: `${v}%` }}
+                        style={{ transform: `scaleX(${v / 100})` }}
                       />
                     </span>
                     <span className="bd-val">{v || '—'}</span>

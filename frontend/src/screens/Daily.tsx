@@ -144,6 +144,7 @@ export function Daily({ meta, onPlay, onResume, onPractice, busy }: Props) {
             <div className="name-row" style={{ marginTop: 18 }}>
               <input
                 className="text-input"
+                aria-label="Name your player"
                 placeholder="Name your player"
                 value={name}
                 maxLength={28}

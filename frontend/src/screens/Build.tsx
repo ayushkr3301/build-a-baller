@@ -204,7 +204,7 @@ export function Build({ run, meta, onSpin, onTake, onSkip, busy }: Props) {
                         : 'idle'
                   }
                   durationMs={(fast ? TIMING.fast : TIMING.normal).playerReel}
-                  accent="#ffe27a"
+                  accent="var(--gold-bright)"
                 />
 
                 {stage === 'player-landed' && offer && (

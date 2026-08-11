@@ -140,7 +140,7 @@ export function Career({ run, meta, onStart, onChoose, onContinue, onRestart, bu
             <span className="growth-cap">/ {career.potential}</span>
           </div>
           <div className="growth-track">
-            <div className="growth-fill" style={{ width: `${Math.max(4, progress)}%` }} />
+            <div className="growth-fill" style={{ transform: `scaleX(${Math.max(4, progress) / 100})` }} />
           </div>
           <span className="growth-label">
             {career.potential - career.overall > 0
@@ -358,7 +358,7 @@ function CareerTimeline({
                   <td className="num">{s.goals}</td>
                   <td className="num">{s.assists}</td>
                   <td className="num">{s.avg_rating.toFixed(2)}</td>
-                  <td style={{ color: '#ffe27a', fontSize: 12 }}>{s.trophies.join(', ')}</td>
+                  <td style={{ color: 'var(--gold-bright)', fontSize: 12 }}>{s.trophies.join(', ')}</td>
                 </tr>
               ))}
           </tbody>

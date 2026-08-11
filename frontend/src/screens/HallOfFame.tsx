@@ -129,7 +129,7 @@ export function HallOfFame({ onBack }: { onBack: () => void }) {
                     <td>
                       <b>{e.grade}</b>
                     </td>
-                    <td style={{ color: '#ffe27a', fontSize: 12 }}>
+                    <td style={{ color: 'var(--gold-bright)', fontSize: 12 }}>
                       {e.awards.length ? e.awards.join(', ') : ''}
                     </td>
                   </tr>
