@@ -1361,6 +1361,9 @@ button:disabled {
 }
 
 .bd-fill {
+  /* block, not the span's default inline -- an inline box ignores width and
+     transform, so the fill rendered at zero and the bar looked empty. */
+  display: block;
   height: 100%;
   width: 100%;
   border-radius: 999px;
